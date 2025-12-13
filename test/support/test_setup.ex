@@ -6,6 +6,13 @@ defmodule SqlDir.TestSetup do
   and seeds test data for each supported adapter.
   """
 
+  alias Ecto.Adapters.ClickHouse
+  alias Ecto.Adapters.MyXQL
+  alias Ecto.Adapters.Postgres
+  alias Ecto.Adapters.SQL.Sandbox
+  alias Ecto.Adapters.SQLite3
+  alias Ecto.Adapters.Tds
+
   @repos [
     {:postgres, SqlDir.Test.PostgresRepo},
     {:mysql, SqlDir.Test.MySQLRepo},
@@ -32,7 +39,7 @@ defmodule SqlDir.TestSetup do
   def teardown_all do
     for {_adapter, repo} <- @repos do
       try do
-        Ecto.Adapters.SQL.Sandbox.mode(repo, :manual)
+        Sandbox.mode(repo, :manual)
         repo.stop()
       rescue
         _ -> :ok
@@ -64,7 +71,7 @@ defmodule SqlDir.TestSetup do
 
     # Set sandbox mode (ClickHouse doesn't support sandbox)
     if adapter != :clickhouse do
-      Ecto.Adapters.SQL.Sandbox.mode(repo, :manual)
+      Sandbox.mode(repo, :manual)
     end
   end
 
@@ -153,24 +160,24 @@ defmodule SqlDir.TestSetup do
     """)
   end
 
-  defp truncate_table(Ecto.Adapters.Postgres, repo) do
+  defp truncate_table(Postgres, repo) do
     repo.query!("TRUNCATE TABLE users RESTART IDENTITY")
   end
 
-  defp truncate_table(Ecto.Adapters.MyXQL, repo) do
+  defp truncate_table(MyXQL, repo) do
     repo.query!("TRUNCATE TABLE users")
   end
 
-  defp truncate_table(Ecto.Adapters.SQLite3, repo) do
+  defp truncate_table(SQLite3, repo) do
     repo.query!("DELETE FROM users")
     repo.query!("DELETE FROM sqlite_sequence WHERE name = 'users'")
   end
 
-  defp truncate_table(Ecto.Adapters.Tds, repo) do
+  defp truncate_table(Tds, repo) do
     repo.query!("TRUNCATE TABLE users")
   end
 
-  defp truncate_table(Ecto.Adapters.ClickHouse, repo) do
+  defp truncate_table(ClickHouse, repo) do
     repo.query!("TRUNCATE TABLE users")
   end
 
@@ -191,35 +198,35 @@ defmodule SqlDir.TestSetup do
     end
   end
 
-  defp insert_user(Ecto.Adapters.Postgres, repo, _id, name, email, age) do
+  defp insert_user(Postgres, repo, _id, name, email, age) do
     repo.query!(
       "INSERT INTO users (name, email, age) VALUES ($1, $2, $3)",
       [name, email, age]
     )
   end
 
-  defp insert_user(Ecto.Adapters.MyXQL, repo, _id, name, email, age) do
+  defp insert_user(MyXQL, repo, _id, name, email, age) do
     repo.query!(
       "INSERT INTO users (name, email, age) VALUES (?, ?, ?)",
       [name, email, age]
     )
   end
 
-  defp insert_user(Ecto.Adapters.SQLite3, repo, _id, name, email, age) do
+  defp insert_user(SQLite3, repo, _id, name, email, age) do
     repo.query!(
       "INSERT INTO users (name, email, age) VALUES (?, ?, ?)",
       [name, email, age]
     )
   end
 
-  defp insert_user(Ecto.Adapters.Tds, repo, _id, name, email, age) do
+  defp insert_user(Tds, repo, _id, name, email, age) do
     repo.query!(
       "INSERT INTO users (name, email, age) VALUES (@1, @2, @3)",
       [name, email, age]
     )
   end
 
-  defp insert_user(Ecto.Adapters.ClickHouse, repo, id, name, email, age) do
+  defp insert_user(ClickHouse, repo, id, name, email, age) do
     repo.query!(
       "INSERT INTO users (id, name, email, age) VALUES ({id:UInt32}, {name:String}, {email:String}, {age:UInt32})",
       %{id: id, name: name, email: email, age: age}

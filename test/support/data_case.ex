@@ -7,6 +7,8 @@ defmodule SqlDir.DataCase do
 
   use ExUnit.CaseTemplate
 
+  alias Ecto.Adapters.SQL.Sandbox
+
   using do
     quote do
       import SqlDir.DataCase
@@ -17,8 +19,8 @@ defmodule SqlDir.DataCase do
   Sets up the sandbox for the given repo.
   """
   def setup_sandbox(repo) do
-    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(repo, shared: false)
-    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+    pid = Sandbox.start_owner!(repo, shared: false)
+    on_exit(fn -> Sandbox.stop_owner(pid) end)
     :ok
   end
 end

@@ -29,7 +29,8 @@ defmodule SqlDir.MixProject do
       {:ecto_sqlite3, "~> 0.13", optional: true},
       {:tds, "~> 2.3", optional: true},
       {:ecto_ch, "~> 0.3", optional: true},
-      {:ex_doc, "~> 0.30", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.30", only: :dev, runtime: false},
+      {:styler, "~> 1.10", only: [:dev, :test], runtime: false}
     ]
   end
 end

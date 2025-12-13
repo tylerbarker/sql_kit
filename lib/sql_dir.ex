@@ -65,7 +65,8 @@ defmodule SqlDir do
   - `:files` (required) - List of SQL filenames to load
   """
 
-  alias SqlDir.{Config, Helpers}
+  alias SqlDir.Config
+  alias SqlDir.Helpers
 
   defmacro __using__(opts) do
     otp_app = Keyword.fetch!(opts, :otp_app)

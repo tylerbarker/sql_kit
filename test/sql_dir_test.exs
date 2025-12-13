@@ -1,8 +1,17 @@
 defmodule SqlDirTest do
   use SqlDir.DataCase, async: false
 
-  alias SqlDir.Test.{PostgresSQL, MySQLSQL, SQLiteSQL, TdsSQL, ClickHouseSQL, User}
-  alias SqlDir.Test.{PostgresRepo, MySQLRepo, SQLiteRepo, TdsRepo, ClickHouseRepo}
+  alias SqlDir.Test.ClickHouseRepo
+  alias SqlDir.Test.ClickHouseSQL
+  alias SqlDir.Test.MySQLRepo
+  alias SqlDir.Test.MySQLSQL
+  alias SqlDir.Test.PostgresRepo
+  alias SqlDir.Test.PostgresSQL
+  alias SqlDir.Test.SQLiteRepo
+  alias SqlDir.Test.SQLiteSQL
+  alias SqlDir.Test.TdsRepo
+  alias SqlDir.Test.TdsSQL
+  alias SqlDir.Test.User
 
   # Define atoms used in queries so to_existing_atom works
   _ = [:id, :name, :email, :age]
@@ -435,9 +444,10 @@ defmodule SqlDirTest do
     test "raises CompileError for missing SQL file" do
       assert_raise CompileError, fn ->
         defmodule BadSQL do
+          @moduledoc false
           use SqlDir,
             otp_app: :sql_dir,
-            repo: SqlDir.Test.PostgresRepo,
+            repo: PostgresRepo,
             dirname: "test_postgres",
             files: ["does_not_exist.sql"]
         end

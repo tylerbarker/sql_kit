@@ -1,4 +1,5 @@
 defmodule SqlDir.Test.PostgresSQL do
+  @moduledoc false
   use SqlDir,
     otp_app: :sql_dir,
     repo: SqlDir.Test.PostgresRepo,
@@ -7,6 +8,7 @@ defmodule SqlDir.Test.PostgresSQL do
 end
 
 defmodule SqlDir.Test.MySQLSQL do
+  @moduledoc false
   use SqlDir,
     otp_app: :sql_dir,
     repo: SqlDir.Test.MySQLRepo,
@@ -15,6 +17,7 @@ defmodule SqlDir.Test.MySQLSQL do
 end
 
 defmodule SqlDir.Test.SQLiteSQL do
+  @moduledoc false
   use SqlDir,
     otp_app: :sql_dir,
     repo: SqlDir.Test.SQLiteRepo,
@@ -23,6 +26,7 @@ defmodule SqlDir.Test.SQLiteSQL do
 end
 
 defmodule SqlDir.Test.TdsSQL do
+  @moduledoc false
   use SqlDir,
     otp_app: :sql_dir,
     repo: SqlDir.Test.TdsRepo,
@@ -31,6 +35,7 @@ defmodule SqlDir.Test.TdsSQL do
 end
 
 defmodule SqlDir.Test.ClickHouseSQL do
+  @moduledoc false
   use SqlDir,
     otp_app: :sql_dir,
     repo: SqlDir.Test.ClickHouseRepo,
@@ -40,5 +45,6 @@ end
 
 # Test struct for casting
 defmodule SqlDir.Test.User do
+  @moduledoc false
   defstruct [:id, :name, :email, :age]
 end
