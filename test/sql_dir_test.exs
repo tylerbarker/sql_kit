@@ -1,5 +1,184 @@
 defmodule SqlDirTest do
-  use ExUnit.Case
+  use SqlDir.DataCase, async: false
 
-  # Main SqlDir module tests will be added after the macro is implemented
+  alias SqlDir.Test.{PostgresSQL, MySQLSQL, SQLiteSQL, TdsSQL, User}
+  alias SqlDir.Test.{PostgresRepo, MySQLRepo, SQLiteRepo, TdsRepo}
+
+  # Define atoms used in queries so to_existing_atom works
+  _ = [:id, :name, :email, :age]
+
+  @adapters [
+    {:postgres, PostgresSQL, PostgresRepo},
+    {:mysql, MySQLSQL, MySQLRepo},
+    {:sqlite, SQLiteSQL, SQLiteRepo},
+    {:tds, TdsSQL, TdsRepo}
+  ]
+
+  describe "load!/1" do
+    for {adapter, sql_module, _repo} <- @adapters do
+      @sql_module sql_module
+
+      test "#{adapter}: returns SQL string from file" do
+        sql = @sql_module.load!("all_users.sql")
+        assert sql =~ "SELECT"
+        assert sql =~ "FROM users"
+      end
+
+      test "#{adapter}: raises for unknown file" do
+        assert_raise RuntimeError, ~r/was not included in the :files list/, fn ->
+          @sql_module.load!("nonexistent.sql")
+        end
+      end
+    end
+  end
+
+  describe "query_all!/3" do
+    for {adapter, sql_module, repo} <- @adapters do
+      @sql_module sql_module
+      @repo repo
+
+      setup do
+        setup_sandbox(@repo)
+      end
+
+      test "#{adapter}: returns list of maps" do
+        results = @sql_module.query_all!("all_users.sql")
+
+        assert length(results) == 3
+        assert Enum.all?(results, &is_map/1)
+
+        first = hd(results)
+        assert first.id == 1
+        assert first.name == "Alice"
+      end
+
+      test "#{adapter}: casts to struct with :as option" do
+        results = @sql_module.query_all!("all_users.sql", [], as: User)
+
+        assert length(results) == 3
+        assert Enum.all?(results, &match?(%User{}, &1))
+      end
+
+      test "#{adapter}: returns empty list when no results" do
+        results = @sql_module.query_all!("no_users.sql")
+        assert results == []
+      end
+
+      test "#{adapter}: passes parameters to query" do
+        results = @sql_module.query_all!("user_by_id.sql", [1])
+
+        assert length(results) == 1
+        assert hd(results).name == "Alice"
+      end
+    end
+  end
+
+  describe "query_one!/3" do
+    for {adapter, sql_module, repo} <- @adapters do
+      @sql_module sql_module
+      @repo repo
+
+      setup do
+        setup_sandbox(@repo)
+      end
+
+      test "#{adapter}: returns single map" do
+        result = @sql_module.query_one!("first_user.sql")
+
+        assert result.id == 1
+        assert result.name == "Alice"
+      end
+
+      test "#{adapter}: returns result with parameterized query" do
+        result = @sql_module.query_one!("user_by_id.sql", [2])
+
+        assert result.id == 2
+        assert result.name == "Bob"
+      end
+
+      test "#{adapter}: raises NoResultsError when no rows" do
+        assert_raise SqlDir.NoResultsError, ~r/expected at least one result/, fn ->
+          @sql_module.query_one!("no_users.sql")
+        end
+      end
+
+      test "#{adapter}: raises MultipleResultsError when multiple rows" do
+        assert_raise SqlDir.MultipleResultsError, ~r/got 3/, fn ->
+          @sql_module.query_one!("all_users.sql")
+        end
+      end
+
+      test "#{adapter}: casts to struct with :as option" do
+        result = @sql_module.query_one!("first_user.sql", [], as: User)
+
+        assert %User{} = result
+        assert result.name == "Alice"
+      end
+    end
+  end
+
+  describe "extract_result/1" do
+    setup do
+      setup_sandbox(PostgresRepo)
+      setup_sandbox(MySQLRepo)
+      setup_sandbox(SQLiteRepo)
+      setup_sandbox(TdsRepo)
+    end
+
+    test "extracts columns and rows from Postgrex.Result" do
+      result = PostgresRepo.query!("SELECT id, name FROM users WHERE id = $1", [1])
+      assert %Postgrex.Result{} = result
+
+      {columns, rows} = SqlDir.extract_result(result)
+      assert columns == ["id", "name"]
+      assert [[1, "Alice"]] = rows
+    end
+
+    test "extracts columns and rows from MyXQL.Result" do
+      result = MySQLRepo.query!("SELECT id, name FROM users WHERE id = ?", [1])
+      assert %MyXQL.Result{} = result
+
+      {columns, rows} = SqlDir.extract_result(result)
+      assert columns == ["id", "name"]
+      assert [[1, "Alice"]] = rows
+    end
+
+    test "extracts columns and rows from Exqlite.Result" do
+      result = SQLiteRepo.query!("SELECT id, name FROM users WHERE id = ?", [1])
+      assert %Exqlite.Result{} = result
+
+      {columns, rows} = SqlDir.extract_result(result)
+      assert columns == ["id", "name"]
+      assert [[1, "Alice"]] = rows
+    end
+
+    test "extracts columns and rows from Tds.Result" do
+      result = TdsRepo.query!("SELECT id, name FROM users WHERE id = @1", [1])
+      assert %Tds.Result{} = result
+
+      {columns, rows} = SqlDir.extract_result(result)
+      assert columns == ["id", "name"]
+      assert [[1, "Alice"]] = rows
+    end
+
+    test "raises for unsupported result type" do
+      assert_raise ArgumentError, ~r/Unsupported query result type/, fn ->
+        SqlDir.extract_result(%{cols: [], rows: []})
+      end
+    end
+  end
+
+  describe "compile-time validation" do
+    test "raises CompileError for missing SQL file" do
+      assert_raise CompileError, fn ->
+        defmodule BadSQL do
+          use SqlDir,
+            otp_app: :sql_dir,
+            repo: SqlDir.Test.PostgresRepo,
+            dirname: "test_postgres",
+            files: ["does_not_exist.sql"]
+        end
+      end
+    end
+  end
 end

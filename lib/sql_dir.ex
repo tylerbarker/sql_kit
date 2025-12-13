@@ -4,8 +4,20 @@ defmodule SqlDir do
 
   SqlDir provides a clean API for working with raw SQL files in Phoenix/Ecto
   applications. SQL files are embedded in module attributes at compile time
-  for production efficiency, while reading from disk in dev/test for rapid
-  iteration.
+  to avoid file I/O when calling query functions in production, while reading
+  from disk in dev/test for rapid iteration.
+
+  ## Supported Databases
+
+  Any Ecto adapter returning a result map containing rows and columns should work.
+  The test suite covers the following adapters:
+
+  | Database   | Ecto Adapter           | Driver   |
+  |------------|------------------------|----------|
+  | PostgreSQL | Ecto.Adapters.Postgres | Postgrex |
+  | MySQL      | Ecto.Adapters.MyXQL    | MyXQL    |
+  | SQLite     | Ecto.Adapters.SQLite3  | Exqlite  |
+  | SQL Server | Ecto.Adapters.Tds      | Tds      |
 
   ## Usage
 
@@ -20,7 +32,7 @@ defmodule SqlDir do
       # Get raw SQL string
       MyApp.Reports.SQL.load!("stats.sql")
 
-      # Execute and get single row as map (or nil)
+      # Execute and get single row as map
       MyApp.Reports.SQL.query_one!("stats.sql", [report_id])
 
       # Execute and get all rows as list of maps
@@ -34,8 +46,7 @@ defmodule SqlDir do
 
       # config/config.exs
       config :my_app, SqlDir,
-        root_sql_dir: "priv/repo/sql",  # default
-        adapter: :postgrex              # optional, auto-detected from repo
+        root_sql_dir: "priv/repo/sql"  # default
 
       # config/dev.exs and config/test.exs
       config :my_app, SqlDir,
@@ -51,7 +62,6 @@ defmodule SqlDir do
   - `:repo` (required) - The Ecto repo module to use for queries
   - `:dirname` (required) - Subdirectory within root_sql_dir for this module's SQL files
   - `:files` (required) - List of SQL filenames to load
-  - `:adapter` (optional) - Override adapter detection (`:postgrex`, `:myxql`, `:exqlite`, `:tds`)
   """
 
   alias SqlDir.{Config, Helpers}
@@ -61,7 +71,6 @@ defmodule SqlDir do
     repo = Keyword.fetch!(opts, :repo)
     dirname = Keyword.fetch!(opts, :dirname)
     files = Keyword.fetch!(opts, :files)
-    adapter_opt = Keyword.get(opts, :adapter)
 
     # Build the SQL directory path at compile time
     root_sql_dir = Config.root_sql_dir(otp_app)
@@ -92,7 +101,6 @@ defmodule SqlDir do
       @otp_app unquote(otp_app)
       @repo unquote(repo)
       @sql_dir unquote(sql_dir)
-      @adapter_opt unquote(adapter_opt)
 
       @doc """
       Loads a SQL string from a file.
@@ -142,9 +150,7 @@ defmodule SqlDir do
       def query_all!(filename, params \\ [], opts \\ []) do
         sql = load!(filename)
         result = @repo.query!(sql, params)
-
-        adapter = SqlDir.Adapter.resolve(@adapter_opt, @otp_app, @repo)
-        {columns, rows} = adapter.extract_result(result)
+        {columns, rows} = SqlDir.extract_result(result)
 
         unsafe_atoms = Keyword.get(opts, :unsafe_atoms, false)
 
@@ -205,5 +211,21 @@ defmodule SqlDir do
         end
       end
     end
+  end
+
+  @doc """
+  Extracts columns and rows from an Ecto database driver result.
+  """
+  @spec extract_result(struct() | map()) :: {[String.t()], [list()]}
+  def extract_result(%{columns: columns, rows: rows}), do: {columns, rows}
+
+  def extract_result(%{__struct__: struct}) do
+    raise ArgumentError,
+          "Unsupported query result type: #{inspect(struct)}."
+  end
+
+  def extract_result(other) do
+    raise ArgumentError,
+          "Unsupported query result type: #{inspect(other)}. "
   end
 end

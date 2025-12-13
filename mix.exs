@@ -26,7 +26,7 @@ defmodule SqlDir.MixProject do
       {:ecto_sql, "~> 3.0"},
       {:postgrex, "~> 0.17", optional: true},
       {:myxql, "~> 0.6", optional: true},
-      {:exqlite, "~> 0.13", optional: true},
+      {:ecto_sqlite3, "~> 0.13", optional: true},
       {:tds, "~> 2.3", optional: true},
       {:ex_doc, "~> 0.30", only: :dev, runtime: false}
     ]
