@@ -1,21 +1,25 @@
 defmodule SqlDirTest do
   use SqlDir.DataCase, async: false
 
-  alias SqlDir.Test.{PostgresSQL, MySQLSQL, SQLiteSQL, TdsSQL, User}
-  alias SqlDir.Test.{PostgresRepo, MySQLRepo, SQLiteRepo, TdsRepo}
+  alias SqlDir.Test.{PostgresSQL, MySQLSQL, SQLiteSQL, TdsSQL, ClickHouseSQL, User}
+  alias SqlDir.Test.{PostgresRepo, MySQLRepo, SQLiteRepo, TdsRepo, ClickHouseRepo}
 
   # Define atoms used in queries so to_existing_atom works
   _ = [:id, :name, :email, :age]
 
-  @adapters [
+  # Adapters that support Ecto sandbox
+  @sandbox_adapters [
     {:postgres, PostgresSQL, PostgresRepo},
     {:mysql, MySQLSQL, MySQLRepo},
     {:sqlite, SQLiteSQL, SQLiteRepo},
     {:tds, TdsSQL, TdsRepo}
   ]
 
+  # All adapters including those without sandbox support
+  @all_adapters @sandbox_adapters ++ [{:clickhouse, ClickHouseSQL, ClickHouseRepo}]
+
   describe "load!/1" do
-    for {adapter, sql_module, _repo} <- @adapters do
+    for {adapter, sql_module, _repo} <- @all_adapters do
       @sql_module sql_module
 
       test "#{adapter}: returns SQL string from file" do
@@ -33,7 +37,8 @@ defmodule SqlDirTest do
   end
 
   describe "query_all!/3" do
-    for {adapter, sql_module, repo} <- @adapters do
+    # Tests for adapters that support sandbox
+    for {adapter, sql_module, repo} <- @sandbox_adapters do
       @sql_module sql_module
       @repo repo
 
@@ -71,10 +76,42 @@ defmodule SqlDirTest do
         assert hd(results).name == "Alice"
       end
     end
+
+    # ClickHouse tests (no sandbox support)
+    test "clickhouse: returns list of maps" do
+      results = ClickHouseSQL.query_all!("all_users.sql")
+
+      assert length(results) == 3
+      assert Enum.all?(results, &is_map/1)
+
+      first = hd(results)
+      assert first.id == 1
+      assert first.name == "Alice"
+    end
+
+    test "clickhouse: casts to struct with :as option" do
+      results = ClickHouseSQL.query_all!("all_users.sql", [], as: User)
+
+      assert length(results) == 3
+      assert Enum.all?(results, &match?(%User{}, &1))
+    end
+
+    test "clickhouse: returns empty list when no results" do
+      results = ClickHouseSQL.query_all!("no_users.sql")
+      assert results == []
+    end
+
+    test "clickhouse: passes parameters to query" do
+      results = ClickHouseSQL.query_all!("user_by_id.sql", %{id: 1})
+
+      assert length(results) == 1
+      assert hd(results).name == "Alice"
+    end
   end
 
   describe "query_one!/3" do
-    for {adapter, sql_module, repo} <- @adapters do
+    # Tests for adapters that support sandbox
+    for {adapter, sql_module, repo} <- @sandbox_adapters do
       @sql_module sql_module
       @repo repo
 
@@ -114,6 +151,40 @@ defmodule SqlDirTest do
         assert %User{} = result
         assert result.name == "Alice"
       end
+    end
+
+    # ClickHouse tests (no sandbox support)
+    test "clickhouse: returns single map" do
+      result = ClickHouseSQL.query_one!("first_user.sql")
+
+      assert result.id == 1
+      assert result.name == "Alice"
+    end
+
+    test "clickhouse: returns result with parameterized query" do
+      result = ClickHouseSQL.query_one!("user_by_id.sql", %{id: 2})
+
+      assert result.id == 2
+      assert result.name == "Bob"
+    end
+
+    test "clickhouse: raises NoResultsError when no rows" do
+      assert_raise SqlDir.NoResultsError, ~r/expected at least one result/, fn ->
+        ClickHouseSQL.query_one!("no_users.sql")
+      end
+    end
+
+    test "clickhouse: raises MultipleResultsError when multiple rows" do
+      assert_raise SqlDir.MultipleResultsError, ~r/got 3/, fn ->
+        ClickHouseSQL.query_one!("all_users.sql")
+      end
+    end
+
+    test "clickhouse: casts to struct with :as option" do
+      result = ClickHouseSQL.query_one!("first_user.sql", [], as: User)
+
+      assert %User{} = result
+      assert result.name == "Alice"
     end
   end
 
@@ -155,6 +226,14 @@ defmodule SqlDirTest do
     test "extracts columns and rows from Tds.Result" do
       result = TdsRepo.query!("SELECT id, name FROM users WHERE id = @1", [1])
       assert %Tds.Result{} = result
+
+      {columns, rows} = SqlDir.extract_result(result)
+      assert columns == ["id", "name"]
+      assert [[1, "Alice"]] = rows
+    end
+
+    test "extracts columns and rows from Ch.Result" do
+      result = ClickHouseRepo.query!("SELECT id, name FROM users WHERE id = {id:UInt32}", %{id: 1})
 
       {columns, rows} = SqlDir.extract_result(result)
       assert columns == ["id", "name"]

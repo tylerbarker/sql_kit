@@ -32,4 +32,11 @@ config :sql_dir, SqlDir.Test.TdsRepo,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: 10
 
+config :sql_dir, SqlDir.Test.ClickHouseRepo,
+  url: "http://localhost:8123/sql_dir_test",
+  username: "default",
+  password: "clickhouse",
+  pool: Ecto.Adapters.SQL.Sandbox,
+  pool_size: 10
+
 config :logger, level: :warning

@@ -30,6 +30,14 @@ defmodule SqlDir.Test.TdsSQL do
     files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql"]
 end
 
+defmodule SqlDir.Test.ClickHouseSQL do
+  use SqlDir,
+    otp_app: :sql_dir,
+    repo: SqlDir.Test.ClickHouseRepo,
+    dirname: "test_clickhouse",
+    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql"]
+end
+
 # Test struct for casting
 defmodule SqlDir.Test.User do
   defstruct [:id, :name, :email, :age]

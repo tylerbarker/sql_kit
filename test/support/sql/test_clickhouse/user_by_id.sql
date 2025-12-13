@@ -1,0 +1,1 @@
+SELECT id, name, email, age FROM users WHERE id = {id:UInt32}

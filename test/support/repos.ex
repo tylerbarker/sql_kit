@@ -21,3 +21,9 @@ defmodule SqlDir.Test.TdsRepo do
     otp_app: :sql_dir,
     adapter: Ecto.Adapters.Tds
 end
+
+defmodule SqlDir.Test.ClickHouseRepo do
+  use Ecto.Repo,
+    otp_app: :sql_dir,
+    adapter: Ecto.Adapters.ClickHouse
+end

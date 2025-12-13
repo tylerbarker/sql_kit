@@ -12,12 +12,13 @@ defmodule SqlDir do
   Any Ecto adapter returning a result map containing rows and columns should work.
   The test suite covers the following adapters:
 
-  | Database   | Ecto Adapter           | Driver   |
-  |------------|------------------------|----------|
-  | PostgreSQL | Ecto.Adapters.Postgres | Postgrex |
-  | MySQL      | Ecto.Adapters.MyXQL    | MyXQL    |
-  | SQLite     | Ecto.Adapters.SQLite3  | Exqlite  |
-  | SQL Server | Ecto.Adapters.Tds      | Tds      |
+  | Database   | Ecto Adapter              | Driver   |
+  |------------|---------------------------|----------|
+  | PostgreSQL | Ecto.Adapters.Postgres    | Postgrex |
+  | MySQL      | Ecto.Adapters.MyXQL       | MyXQL    |
+  | SQLite     | Ecto.Adapters.SQLite3     | Exqlite  |
+  | SQL Server | Ecto.Adapters.Tds         | Tds      |
+  | ClickHouse | Ecto.Adapters.ClickHouse  | Ch       |
 
   ## Usage
 

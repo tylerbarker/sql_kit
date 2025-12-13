@@ -10,7 +10,8 @@ defmodule SqlDir.TestSetup do
     {:postgres, SqlDir.Test.PostgresRepo},
     {:mysql, SqlDir.Test.MySQLRepo},
     {:sqlite, SqlDir.Test.SQLiteRepo},
-    {:tds, SqlDir.Test.TdsRepo}
+    {:tds, SqlDir.Test.TdsRepo},
+    {:clickhouse, SqlDir.Test.ClickHouseRepo}
   ]
 
   @doc """
@@ -50,8 +51,8 @@ defmodule SqlDir.TestSetup do
   end
 
   defp setup_repo(adapter, repo) do
-    # Create database if it doesn't exist (not needed for SQLite)
-    if adapter != :sqlite do
+    # Create database if it doesn't exist (not needed for SQLite or ClickHouse)
+    if adapter not in [:sqlite, :clickhouse] do
       ensure_database_created(repo)
     end
 
@@ -61,8 +62,10 @@ defmodule SqlDir.TestSetup do
     # Run migrations
     run_migrations(adapter, repo)
 
-    # Set sandbox mode
-    Ecto.Adapters.SQL.Sandbox.mode(repo, :manual)
+    # Set sandbox mode (ClickHouse doesn't support sandbox)
+    if adapter != :clickhouse do
+      Ecto.Adapters.SQL.Sandbox.mode(repo, :manual)
+    end
   end
 
   defp ensure_database_created(repo) do
@@ -135,6 +138,21 @@ defmodule SqlDir.TestSetup do
     end
   end
 
+  defp create_users_table(:clickhouse, repo) do
+    # Drop and recreate for clean state (ClickHouse doesn't have IF NOT EXISTS that works well)
+    repo.query!("DROP TABLE IF EXISTS users")
+
+    repo.query!("""
+    CREATE TABLE users (
+      id UInt32,
+      name String,
+      email String,
+      age UInt32
+    ) ENGINE = MergeTree()
+    ORDER BY id
+    """)
+  end
+
   defp truncate_table(Ecto.Adapters.Postgres, repo) do
     repo.query!("TRUNCATE TABLE users RESTART IDENTITY")
   end
@@ -152,48 +170,59 @@ defmodule SqlDir.TestSetup do
     repo.query!("TRUNCATE TABLE users")
   end
 
+  defp truncate_table(Ecto.Adapters.ClickHouse, repo) do
+    repo.query!("TRUNCATE TABLE users")
+  end
+
   defp seed_test_data(repo) do
     # Clear existing data and reset auto-increment
     adapter = repo.__adapter__()
     truncate_table(adapter, repo)
 
-    # Insert test users
+    # Insert test users (with IDs for databases that need them)
     users = [
-      {"Alice", "alice@example.com", 30},
-      {"Bob", "bob@example.com", 25},
-      {"Charlie", "charlie@example.com", 35}
+      {1, "Alice", "alice@example.com", 30},
+      {2, "Bob", "bob@example.com", 25},
+      {3, "Charlie", "charlie@example.com", 35}
     ]
 
-    for {name, email, age} <- users do
-      insert_user(adapter, repo, name, email, age)
+    for {id, name, email, age} <- users do
+      insert_user(adapter, repo, id, name, email, age)
     end
   end
 
-  defp insert_user(Ecto.Adapters.Postgres, repo, name, email, age) do
+  defp insert_user(Ecto.Adapters.Postgres, repo, _id, name, email, age) do
     repo.query!(
       "INSERT INTO users (name, email, age) VALUES ($1, $2, $3)",
       [name, email, age]
     )
   end
 
-  defp insert_user(Ecto.Adapters.MyXQL, repo, name, email, age) do
+  defp insert_user(Ecto.Adapters.MyXQL, repo, _id, name, email, age) do
     repo.query!(
       "INSERT INTO users (name, email, age) VALUES (?, ?, ?)",
       [name, email, age]
     )
   end
 
-  defp insert_user(Ecto.Adapters.SQLite3, repo, name, email, age) do
+  defp insert_user(Ecto.Adapters.SQLite3, repo, _id, name, email, age) do
     repo.query!(
       "INSERT INTO users (name, email, age) VALUES (?, ?, ?)",
       [name, email, age]
     )
   end
 
-  defp insert_user(Ecto.Adapters.Tds, repo, name, email, age) do
+  defp insert_user(Ecto.Adapters.Tds, repo, _id, name, email, age) do
     repo.query!(
       "INSERT INTO users (name, email, age) VALUES (@1, @2, @3)",
       [name, email, age]
+    )
+  end
+
+  defp insert_user(Ecto.Adapters.ClickHouse, repo, id, name, email, age) do
+    repo.query!(
+      "INSERT INTO users (id, name, email, age) VALUES ({id:UInt32}, {name:String}, {email:String}, {age:UInt32})",
+      %{id: id, name: name, email: email, age: age}
     )
   end
 end
