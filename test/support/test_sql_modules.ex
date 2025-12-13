@@ -3,7 +3,7 @@ defmodule SqlDir.Test.PostgresSQL do
     otp_app: :sql_dir,
     repo: SqlDir.Test.PostgresRepo,
     dirname: "test_postgres",
-    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql"]
+    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql", "users_by_age_range.sql"]
 end
 
 defmodule SqlDir.Test.MySQLSQL do
@@ -11,7 +11,7 @@ defmodule SqlDir.Test.MySQLSQL do
     otp_app: :sql_dir,
     repo: SqlDir.Test.MySQLRepo,
     dirname: "test_mysql",
-    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql"]
+    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql", "users_by_age_range.sql"]
 end
 
 defmodule SqlDir.Test.SQLiteSQL do
@@ -19,7 +19,7 @@ defmodule SqlDir.Test.SQLiteSQL do
     otp_app: :sql_dir,
     repo: SqlDir.Test.SQLiteRepo,
     dirname: "test_sqlite",
-    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql"]
+    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql", "users_by_age_range.sql"]
 end
 
 defmodule SqlDir.Test.TdsSQL do
@@ -27,7 +27,7 @@ defmodule SqlDir.Test.TdsSQL do
     otp_app: :sql_dir,
     repo: SqlDir.Test.TdsRepo,
     dirname: "test_tds",
-    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql"]
+    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql", "users_by_age_range.sql"]
 end
 
 defmodule SqlDir.Test.ClickHouseSQL do
@@ -35,7 +35,7 @@ defmodule SqlDir.Test.ClickHouseSQL do
     otp_app: :sql_dir,
     repo: SqlDir.Test.ClickHouseRepo,
     dirname: "test_clickhouse",
-    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql"]
+    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql", "users_by_age_range.sql"]
 end
 
 # Test struct for casting

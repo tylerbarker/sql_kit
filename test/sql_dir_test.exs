@@ -361,6 +361,76 @@ defmodule SqlDirTest do
     end
   end
 
+  describe "multi-parameter queries" do
+    # Test data: Alice (30), Bob (25), Charlie (35)
+    # Query: age >= min AND age <= max
+
+    # Sandbox adapters
+    for {adapter, sql_module, repo} <- @sandbox_adapters do
+      @sql_module sql_module
+      @repo repo
+
+      setup do
+        setup_sandbox(@repo)
+      end
+
+      test "#{adapter}: query_all! with multiple parameters" do
+        # age >= 26 AND age <= 32 should return only Alice (30)
+        results = @sql_module.query_all!("users_by_age_range.sql", [26, 32])
+        assert length(results) == 1
+        assert hd(results).name == "Alice"
+      end
+
+      test "#{adapter}: query_all with multiple parameters" do
+        # age >= 24 AND age <= 31 should return Alice (30) and Bob (25)
+        assert {:ok, results} = @sql_module.query_all("users_by_age_range.sql", [24, 31])
+        assert length(results) == 2
+        names = Enum.map(results, & &1.name)
+        assert "Alice" in names
+        assert "Bob" in names
+      end
+
+      test "#{adapter}: query_one! with multiple parameters" do
+        # age >= 34 AND age <= 36 should return only Charlie (35)
+        result = @sql_module.query_one!("users_by_age_range.sql", [34, 36])
+        assert result.name == "Charlie"
+        assert result.age == 35
+      end
+
+      test "#{adapter}: query_one with multiple parameters" do
+        # age >= 29 AND age <= 31 should return only Alice (30)
+        assert {:ok, result} = @sql_module.query_one("users_by_age_range.sql", [29, 31])
+        assert result.name == "Alice"
+      end
+    end
+
+    # ClickHouse tests (no sandbox, uses map params)
+    test "clickhouse: query_all! with multiple parameters" do
+      results = ClickHouseSQL.query_all!("users_by_age_range.sql", %{min_age: 26, max_age: 32})
+      assert length(results) == 1
+      assert hd(results).name == "Alice"
+    end
+
+    test "clickhouse: query_all with multiple parameters" do
+      assert {:ok, results} = ClickHouseSQL.query_all("users_by_age_range.sql", %{min_age: 24, max_age: 31})
+      assert length(results) == 2
+      names = Enum.map(results, & &1.name)
+      assert "Alice" in names
+      assert "Bob" in names
+    end
+
+    test "clickhouse: query_one! with multiple parameters" do
+      result = ClickHouseSQL.query_one!("users_by_age_range.sql", %{min_age: 34, max_age: 36})
+      assert result.name == "Charlie"
+      assert result.age == 35
+    end
+
+    test "clickhouse: query_one with multiple parameters" do
+      assert {:ok, result} = ClickHouseSQL.query_one("users_by_age_range.sql", %{min_age: 29, max_age: 31})
+      assert result.name == "Alice"
+    end
+  end
+
   describe "compile-time validation" do
     test "raises CompileError for missing SQL file" do
       assert_raise CompileError, fn ->
