@@ -108,6 +108,23 @@ defmodule SqlDir do
 
       In `:compiled` mode (default/production), returns the SQL embedded at compile time.
       In `:dynamic` mode (dev/test), reads the file from disk for latest changes.
+
+      Returns `{:ok, sql}` on success, `{:error, reason}` on failure.
+      """
+      @spec load(filename :: String.t()) :: {:ok, String.t()} | {:error, term()}
+      def load(filename) do
+        {:ok, load!(filename)}
+      rescue
+        e -> {:error, e}
+      end
+
+      @doc """
+      Loads a SQL string from a file.
+
+      In `:compiled` mode (default/production), returns the SQL embedded at compile time.
+      In `:dynamic` mode (dev/test), reads the file from disk for latest changes.
+
+      Raises on error.
       """
       @spec load!(filename :: String.t()) :: String.t()
       def load!(filename) do
@@ -132,6 +149,31 @@ defmodule SqlDir do
 
       @doc """
       Executes a SQL query and returns all rows as a list of maps.
+
+      Returns `{:ok, results}` on success, `{:error, exception}` on failure.
+
+      ## Options
+
+      - `:as` - Struct module to cast results into
+      - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of
+        `String.to_existing_atom/1` for column names. Default: `false`
+
+      ## Examples
+
+          SQL.query_all("users.sql", [company_id])
+          # => {:ok, [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]}
+      """
+      @spec query_all(String.t(), list(), keyword()) :: {:ok, [map() | struct()]} | {:error, term()}
+      def query_all(filename, params \\ [], opts \\ []) do
+        {:ok, query_all!(filename, params, opts)}
+      rescue
+        e -> {:error, e}
+      end
+
+      @doc """
+      Executes a SQL query and returns all rows as a list of maps.
+
+      Raises on error.
 
       ## Options
 
@@ -176,6 +218,44 @@ defmodule SqlDir do
             map
           end
         end)
+      end
+
+      @doc """
+      Executes a SQL query and returns a single row as a map or struct.
+
+      Returns `{:ok, result}` on exactly one result, `{:ok, nil}` on no results,
+      or `{:error, exception}` on multiple results or other errors.
+
+      ## Options
+
+      - `:as` - Struct module to cast result into
+      - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of
+        `String.to_existing_atom/1` for column names. Default: `false`
+
+      ## Examples
+
+          SQL.query_one("user.sql", [user_id])
+          # => {:ok, %{id: 1, name: "Alice"}}
+
+          SQL.query_one("missing.sql", [999])
+          # => {:ok, nil}
+      """
+      @spec query_one(String.t(), list(), keyword()) ::
+              {:ok, map() | struct() | nil} | {:error, term()}
+      def query_one(filename, params \\ [], opts \\ []) do
+        case query_all(filename, params, opts) do
+          {:ok, []} ->
+            {:ok, nil}
+
+          {:ok, [row]} ->
+            {:ok, row}
+
+          {:ok, rows} ->
+            {:error, SqlDir.MultipleResultsError.exception(filename: filename, count: length(rows))}
+
+          {:error, _} = error ->
+            error
+        end
       end
 
       @doc """

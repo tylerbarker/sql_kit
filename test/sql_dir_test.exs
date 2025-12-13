@@ -247,6 +247,120 @@ defmodule SqlDirTest do
     end
   end
 
+  describe "load/1 (non-bang)" do
+    for {adapter, sql_module, _repo} <- @all_adapters do
+      @sql_module sql_module
+
+      test "#{adapter}: returns {:ok, sql} on success" do
+        assert {:ok, sql} = @sql_module.load("all_users.sql")
+        assert sql =~ "SELECT"
+        assert sql =~ "FROM users"
+      end
+
+      test "#{adapter}: returns {:error, reason} for unknown file" do
+        assert {:error, %RuntimeError{}} = @sql_module.load("nonexistent.sql")
+      end
+    end
+  end
+
+  describe "query_all/3 (non-bang)" do
+    for {adapter, sql_module, repo} <- @sandbox_adapters do
+      @sql_module sql_module
+      @repo repo
+
+      setup do
+        setup_sandbox(@repo)
+      end
+
+      test "#{adapter}: returns {:ok, results} on success" do
+        assert {:ok, results} = @sql_module.query_all("all_users.sql")
+        assert length(results) == 3
+        assert hd(results).name == "Alice"
+      end
+
+      test "#{adapter}: returns {:ok, []} when no results" do
+        assert {:ok, []} = @sql_module.query_all("no_users.sql")
+      end
+
+      test "#{adapter}: returns {:error, exception} on query error" do
+        assert {:error, %RuntimeError{}} = @sql_module.query_all("nonexistent.sql")
+      end
+    end
+
+    # ClickHouse tests (no sandbox support)
+    test "clickhouse: returns {:ok, results} on success" do
+      assert {:ok, results} = ClickHouseSQL.query_all("all_users.sql")
+      assert length(results) == 3
+      assert hd(results).name == "Alice"
+    end
+
+    test "clickhouse: returns {:ok, []} when no results" do
+      assert {:ok, []} = ClickHouseSQL.query_all("no_users.sql")
+    end
+
+    test "clickhouse: returns {:error, exception} on query error" do
+      assert {:error, %RuntimeError{}} = ClickHouseSQL.query_all("nonexistent.sql")
+    end
+  end
+
+  describe "query_one/3 (non-bang)" do
+    for {adapter, sql_module, repo} <- @sandbox_adapters do
+      @sql_module sql_module
+      @repo repo
+
+      setup do
+        setup_sandbox(@repo)
+      end
+
+      test "#{adapter}: returns {:ok, result} on exactly one result" do
+        assert {:ok, result} = @sql_module.query_one("first_user.sql")
+        assert result.id == 1
+        assert result.name == "Alice"
+      end
+
+      test "#{adapter}: returns {:ok, nil} when no results" do
+        assert {:ok, nil} = @sql_module.query_one("no_users.sql")
+      end
+
+      test "#{adapter}: returns {:error, MultipleResultsError} when multiple results" do
+        assert {:error, %SqlDir.MultipleResultsError{count: 3}} =
+                 @sql_module.query_one("all_users.sql")
+      end
+
+      test "#{adapter}: returns {:error, exception} on query error" do
+        assert {:error, %RuntimeError{}} = @sql_module.query_one("nonexistent.sql")
+      end
+
+      test "#{adapter}: casts to struct with :as option" do
+        assert {:ok, %User{name: "Alice"}} = @sql_module.query_one("first_user.sql", [], as: User)
+      end
+    end
+
+    # ClickHouse tests (no sandbox support)
+    test "clickhouse: returns {:ok, result} on exactly one result" do
+      assert {:ok, result} = ClickHouseSQL.query_one("first_user.sql")
+      assert result.id == 1
+      assert result.name == "Alice"
+    end
+
+    test "clickhouse: returns {:ok, nil} when no results" do
+      assert {:ok, nil} = ClickHouseSQL.query_one("no_users.sql")
+    end
+
+    test "clickhouse: returns {:error, MultipleResultsError} when multiple results" do
+      assert {:error, %SqlDir.MultipleResultsError{count: 3}} =
+               ClickHouseSQL.query_one("all_users.sql")
+    end
+
+    test "clickhouse: returns {:error, exception} on query error" do
+      assert {:error, %RuntimeError{}} = ClickHouseSQL.query_one("nonexistent.sql")
+    end
+
+    test "clickhouse: casts to struct with :as option" do
+      assert {:ok, %User{name: "Alice"}} = ClickHouseSQL.query_one("first_user.sql", [], as: User)
+    end
+  end
+
   describe "compile-time validation" do
     test "raises CompileError for missing SQL file" do
       assert_raise CompileError, fn ->
