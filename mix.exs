@@ -1,27 +1,34 @@
-defmodule SqlFile.MixProject do
+defmodule SqlDir.MixProject do
   use Mix.Project
 
   def project do
     [
       app: :sql_dir,
       version: "0.1.0",
-      elixir: "~> 1.19",
+      elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger]
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
+
   defp deps do
     [
-      # deps here
+      {:ecto_sql, "~> 3.0"},
+      {:postgrex, "~> 0.17", optional: true},
+      {:myxql, "~> 0.6", optional: true},
+      {:exqlite, "~> 0.13", optional: true},
+      {:tds, "~> 2.3", optional: true},
+      {:ex_doc, "~> 0.30", only: :dev, runtime: false}
     ]
   end
 end
