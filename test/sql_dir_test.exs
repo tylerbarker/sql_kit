@@ -1,8 +1,5 @@
 defmodule SqlDirTest do
   use ExUnit.Case
-  doctest SqlDir
 
-  test "greets the world" do
-    assert SqlDir.hello() == :world
-  end
+  # Main SqlDir module tests will be added after the macro is implemented
 end
