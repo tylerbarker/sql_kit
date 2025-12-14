@@ -13,11 +13,11 @@
 
   ## list of tools (see `mix check` docs for a list of default curated tools)
   tools: [
-    {:format, "mix format"},
-    {:compile, "mix compile"},
+    {:formatter, "mix format"},
+    {:compiler, "mix compile"},
     {:dialyzer, "mix dialyzer"},
     {:credo, "mix credo"},
     {:sobelow, "mix sobelow --skip"},
-    {:test, "mix test"}
+    {:ex_unit, "mix test"}
   ]
 ]

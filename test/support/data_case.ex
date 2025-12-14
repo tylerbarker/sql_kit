@@ -1,4 +1,4 @@
-defmodule SqlDir.DataCase do
+defmodule SqlKit.DataCase do
   @moduledoc """
   Test case template for database tests.
 
@@ -11,7 +11,7 @@ defmodule SqlDir.DataCase do
 
   using do
     quote do
-      import SqlDir.DataCase
+      import SqlKit.DataCase
     end
   end
 

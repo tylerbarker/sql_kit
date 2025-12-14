@@ -1,25 +1,27 @@
-# SqlDir
+# SqlKit
 
-[Hex](https://hex.pm) | [Documentation](https://hexdocs.pm/sql_dir)
+[Hex](https://hex.pm/packages/sql_kit) | [Documentation](https://hexdocs.pm/sql_kit)
 
-Execute raw SQL files like Ecto queries with automatic result transformation to maps and structs.
+A SQL toolkit for Elixir with automatic result transformation to maps and structs.
 
-SqlDir lets you write queries as `.sql` files and execute them with results automatically transformed into maps or structs. SQL files are embedded at compile time for production performance, while reading from disk in dev/test to facilitate rapid iteration.
+SqlKit provides two ways to execute raw SQL with results automatically transformed into maps or structs:
+
+1. **Direct SQL execution** - Execute SQL strings directly with any Ecto repo
+2. **File-based SQL** - Keep SQL in dedicated files with compile-time embedding
 
 ## Why?
 
 Sometimes raw SQL is the right tool for the job. Complex analytical queries, reports with intricate joins, or database-specific features often demand SQL that's awkward to express through an ORM.
 
-Keeping SQL in dedicated `.sql` files brings other practical benefits: Proper syntax highlighting, SQL formatter support, and cleaner Elixir modules without large multi-line strings. It also makes your codebase more accessible to SQL-fluent team members: Product managers, analysts, or DBAs can read, review, and contribute queries without needing to learn Elixir first.
+You can do this already with `Repo.query`, however `Repo.query` returns a result struct with separate `columns` and `rows` lists. Transforming this into usable maps requires boilerplate. SqlKit handles this automatically, returning maps `[%{id: 1, name: "Alice"}, ...]` or structs `[%User{id: 1, name: "Alice"}, ...]` directly.
 
-You can do this already with `File.read` and `Repo.query`, however:
-1. `Repo.query` returns a result struct with separate `columns` and `rows` lists. Transforming this into usable maps requires boilerplate. SqlDir handles this automatically, returning maps `[%{id: 1, name: "Alice"}, ...]` or structs `[%User{id: 1, name: "Alice"}, ...]` directly.
-2. Reading a file from disk whenever you call a function querying the database is unnecessary I/O overhead.
+For file-based SQL, keeping queries in dedicated `.sql` files brings practical benefits: proper syntax highlighting, SQL formatter support, and cleaner Elixir modules without large multi-line strings. It also makes your codebase more accessible to SQL-fluent team members who can read, review, and contribute queries without needing to learn Elixir first. How SQL is loaded is configurable by environment: Reading from disk in development for fast iteration, and embedding at compile time in production to eliminate unnecessary file I/O.
 
 ## Features
 
 - **Automatic result transformation**: Query results returned as maps or structs, not raw columns/rows
-- **Compile-time embedding**: SQL read once at compile time and stored as module attributes
+- **Two APIs**: Execute SQL strings directly or load from files
+- **Compile-time embedding**: File-based SQL read once at compile time and stored as module attributes
 - **Dynamic loading in dev/test**: Edit SQL files without recompiling
 - **Multi-database support**: Works with PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, and ClickHouse
 
@@ -36,23 +38,51 @@ You can do this already with `File.read` and `Repo.query`, however:
 
 ## Installation
 
-Add `sql_dir` to your dependencies in `mix.exs`:
+Add `sql_kit` to your dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:sql_dir, "~> 0.1.0"}
+    {:sql_kit, "~> 0.1.0"}
   ]
 end
 ```
 
 ## Quick Start
 
-### 1. Create SQL files
+### Direct SQL Execution
 
-SQL files are house in subdirectories under the root SQL directory. This is `priv/repo/sql` by default but it is configurable via `:root_sql_dir` config option. Note that whatever you choose must be in `priv` for SQL files to be shipped with your application.
+Execute SQL strings directly with any Ecto repo:
 
-Create a new directory for some SQL:
+```elixir
+# Get all rows as a list of maps
+SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
+# => [%{id: 1, name: "Alice", age: 30}, %{id: 2, name: "Bob", age: 25}]
+
+# Get a single row
+SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
+# => %{id: 1, name: "Alice", age: 30}
+
+# Cast results to structs
+SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users", [], as: User)
+# => [%User{id: 1, name: "Alice", age: 30}, ...]
+
+# Non-bang variants return {:ok, result} or {:error, reason}
+SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
+# => {:ok, %{id: 1, name: "Alice"}}
+
+# ClickHouse uses named parameters as a map
+SqlKit.query_all!(ClickHouseRepo, "SELECT * FROM users WHERE age > {age:UInt32}", %{age: 21})
+# => [%{id: 1, name: "Alice", age: 30}, ...]
+```
+
+### File-Based SQL
+
+For larger queries or better organization, keep SQL in dedicated files:
+
+#### 1. Create SQL files
+
+SQL files are housed in subdirectories under the root SQL directory. This is `priv/repo/sql` by default but is configurable via `:root_sql_dir` config option.
 
 ```sql
 -- priv/repo/sql/reports/stats.sql
@@ -61,14 +91,11 @@ FROM users
 WHERE id = $1
 ```
 
-### 2. Define a SQL module
+#### 2. Define a SQL module
 
 ```elixir
 defmodule MyApp.Reports.SQL do
-  @moduledoc """
-  This module would expect stats.sql and activity.sql to be in priv/repo/sql/reports.
-  """
-  use SqlDir,
+  use SqlKit,
     otp_app: :my_app,
     repo: MyApp.Repo,
     dirname: "reports",
@@ -76,18 +103,18 @@ defmodule MyApp.Reports.SQL do
 end
 ```
 
-### 3. Execute queries
+#### 3. Execute queries
 
 ```elixir
-# Execute and get a single row as a map
+# Get a single row as a map
 MyApp.Reports.SQL.query_one!("stats.sql", [user_id])
 # => %{id: 1, name: "Alice", total_sales: 1000}
 
-# You can also just call query!/3 (or query/3), which is an alias for query_one!/3
+# You can also use query!/3, which is an alias for query_one!/3
 MyApp.Reports.SQL.query!("stats.sql", [user_id])
 # => %{id: 1, name: "Alice", total_sales: 1000}
 
-# Execute and get all rows
+# Get all rows
 MyApp.Reports.SQL.query_all!("activity.sql", [company_id])
 # => [%{id: 1, ...}, %{id: 2, ...}]
 
@@ -95,38 +122,115 @@ MyApp.Reports.SQL.query_all!("activity.sql", [company_id])
 MyApp.Reports.SQL.query_one!("stats.sql", [id], as: UserStats)
 # => %UserStats{id: 1, name: "Alice", total_sales: 1000}
 
-# If you need, you can load the SQL string too
+# Load the raw SQL string
 MyApp.Reports.SQL.load!("stats.sql")
+# => "SELECT id, name, total_sales..."
 ```
 
 ## Configuration
 
 ```elixir
 # config/config.exs
-config :my_app, SqlDir,
+config :my_app, SqlKit,
   root_sql_dir: "priv/repo/sql"  # default
 
-# config/dev.exs and config/test.exs (of course, you can use :compiled for tests if you like)
-config :my_app, SqlDir,
+# config/dev.exs and config/test.exs
+config :my_app, SqlKit,
   load_sql: :dynamic  # read from disk at runtime
 
 # config/prod.exs (or rely on default)
-config :my_app, SqlDir,
+config :my_app, SqlKit,
   load_sql: :compiled  # use compile-time embedded SQL
 ```
 
 ## API Reference
 
-### `query!(filename, params \\ [], opts \\ [])`
+### Standalone Functions
 
-Alias for `query_one!/3`. See `query_one!/3` documentation.
+These functions are defined directly on the `SqlKit` module and work with any Ecto repo:
 
-### `query_one!(filename, params \\ [], opts \\ [])`
+#### `SqlKit.query_all!(repo, sql, params \\ [], opts \\ [])`
+
+Executes SQL and returns all rows as a list of maps.
+
+```elixir
+SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users")
+# => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
+
+SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21], as: User)
+# => [%User{id: 1, name: "Alice"}, ...]
+
+# ClickHouse uses named parameters as a map
+SqlKit.query_all!(ClickHouseRepo, "SELECT * FROM users WHERE age > {age:UInt32}", %{age: 21})
+# => [%{id: 1, name: "Alice"}, ...]
+```
+
+#### `SqlKit.query_one!(repo, sql, params \\ [], opts \\ [])`
+
+Executes SQL and returns exactly one row as a map.
+
+- Raises `SqlKit.NoResultsError` if no rows returned
+- Raises `SqlKit.MultipleResultsError` if more than one row returned
+
+```elixir
+SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
+# => %{id: 1, name: "Alice"}
+
+SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1], as: User)
+# => %User{id: 1, name: "Alice"}
+
+# ClickHouse uses named parameters as a map
+SqlKit.query_one!(ClickHouseRepo, "SELECT * FROM users WHERE id = {id:UInt32}", %{id: 1})
+# => %{id: 1, name: "Alice"}
+```
+
+#### `SqlKit.query!(repo, sql, params \\ [], opts \\ [])`
+
+Alias for `SqlKit.query_one!/4`. See `SqlKit.query_one!/4` documentation.
+
+#### `SqlKit.query_all(repo, sql, params \\ [], opts \\ [])`
+
+Returns `{:ok, results}` on success, `{:error, exception}` on failure.
+
+```elixir
+SqlKit.query_all(MyApp.Repo, "SELECT * FROM users")
+# => {:ok, [%{id: 1, name: "Alice"}, ...]}
+
+# ClickHouse uses named parameters as a map
+SqlKit.query_all(ClickHouseRepo, "SELECT * FROM users WHERE age > {age:UInt32}", %{age: 21})
+# => {:ok, [%{id: 1, name: "Alice"}, ...]}
+```
+
+#### `SqlKit.query_one(repo, sql, params \\ [], opts \\ [])`
+
+Returns `{:ok, result}` on one result, `{:ok, nil}` on no results, or `{:error, exception}` on multiple results or errors.
+
+```elixir
+SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
+# => {:ok, %{id: 1, name: "Alice"}}
+
+SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [999])
+# => {:ok, nil}
+
+# ClickHouse uses named parameters as a map
+SqlKit.query_one(ClickHouseRepo, "SELECT * FROM users WHERE id = {id:UInt32}", %{id: 1})
+# => {:ok, %{id: 1, name: "Alice"}}
+```
+
+#### `SqlKit.query(repo, sql, params \\ [], opts \\ [])`
+
+Alias for `SqlKit.query_one/4`. See `SqlKit.query_one/4` documentation.
+
+### File-Based Functions
+
+These functions are generated by `use SqlKit` and available on your SQL modules:
+
+#### `query_one!(filename, params \\ [], opts \\ [])`
 
 Executes a query and returns a single row as a map.
 
-- Raises `SqlDir.NoResultsError` if no rows returned
-- Raises `SqlDir.MultipleResultsError` if more than one row returned
+- Raises `SqlKit.NoResultsError` if no rows returned
+- Raises `SqlKit.MultipleResultsError` if more than one row returned
 
 ```elixir
 SQL.query_one!("user.sql", [user_id])
@@ -140,7 +244,11 @@ ClickHouseSQL.query_one!("user.sql", %{user_id: 1})
 # => %{id: 1, name: "Alice"}
 ```
 
-### `query_all!(filename, params \\ [], opts \\ [])`
+#### `query!(filename, params \\ [], opts \\ [])`
+
+Alias for `query_one!/3`. See `query_one!/3` documentation.
+
+#### `query_all!(filename, params \\ [], opts \\ [])`
 
 Executes a query and returns all rows as a list of maps.
 
@@ -156,7 +264,7 @@ ClickHouseSQL.query_all!("users.sql", %{company_id: 123})
 # => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
 ```
 
-### `load!(filename)`
+#### `load!(filename)`
 
 Returns the SQL string for the given file.
 
@@ -165,11 +273,7 @@ SQL.load!("users.sql")
 # => "SELECT * FROM users"
 ```
 
-### `query(filename, params \\ [], opts \\ [])`
-
-Alias for `query_one/3`. See `query_one/3` documentation.
-
-### `query_one(filename, params \\ [], opts \\ [])`
+#### `query_one(filename, params \\ [], opts \\ [])`
 
 ```elixir
 SQL.query_one("user.sql", [user_id])
@@ -179,41 +283,40 @@ SQL.query_one("missing_user.sql", [999])
 # => {:ok, nil}  # No results returns nil, not an error
 
 SQL.query_one("all_users.sql", [])
-# => {:error, %SqlDir.MultipleResultsError{count: 10}}
+# => {:error, %SqlKit.MultipleResultsError{count: 10}}
 
 # ClickHouse uses named parameters as a map
 ClickHouseSQL.query_one("user.sql", %{user_id: 1})
 # => {:ok, %{id: 1, name: "Alice"}}
 ```
 
-### `query_all(filename, params \\ [], opts \\ [])`
+#### `query(filename, params \\ [], opts \\ [])`
+
+Alias for `query_one/3`. See `query_one/3` documentation.
+
+#### `query_all(filename, params \\ [], opts \\ [])`
 
 ```elixir
 SQL.query_all("users.sql", [company_id])
 # => {:ok, [%{id: 1, name: "Alice"}, ...]}
-
-SQL.query_all("bad_query.sql", [])
-# => {:error, %Postgrex.Error{...}}
 
 # ClickHouse uses named parameters as a map
 ClickHouseSQL.query_all("users.sql", %{company_id: 123})
 # => {:ok, [%{id: 1, name: "Alice"}, ...]}
 ```
 
-### `load(filename)`
+#### `load(filename)`
 
 ```elixir
 SQL.load("users.sql")
 # => {:ok, "SELECT * FROM users"}
-
-SQL.load("missing.sql")
-# => {:error, %RuntimeError{...}}
 ```
 
 ### Options
 
 - `:as` - Struct module to cast results into
 - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of `String.to_existing_atom/1` for column names. Default: `false`
+- `:query_name` - Custom identifier for exceptions (standalone API only; defaults to truncated SQL)
 
 ## Parameter Syntax by Database
 
@@ -238,7 +341,7 @@ ClickHouse uses named parameters with explicit types. Pass parameters as a map:
 ClickHouseSQL.query_one!("user_by_id.sql", %{id: 1})
 ```
 
-## Use SqlDir Options
+## Use SqlKit Options
 
 - `:otp_app` (required) - Your application name
 - `:repo` (required) - The Ecto repo module to use for queries

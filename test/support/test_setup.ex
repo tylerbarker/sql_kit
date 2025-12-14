@@ -1,4 +1,4 @@
-defmodule SqlDir.TestSetup do
+defmodule SqlKit.TestSetup do
   @moduledoc """
   Handles test database setup and teardown.
 
@@ -14,11 +14,11 @@ defmodule SqlDir.TestSetup do
   alias Ecto.Adapters.Tds
 
   @repos [
-    {:postgres, SqlDir.Test.PostgresRepo},
-    {:mysql, SqlDir.Test.MySQLRepo},
-    {:sqlite, SqlDir.Test.SQLiteRepo},
-    {:tds, SqlDir.Test.TdsRepo},
-    {:clickhouse, SqlDir.Test.ClickHouseRepo}
+    {:postgres, SqlKit.Test.PostgresRepo},
+    {:mysql, SqlKit.Test.MySQLRepo},
+    {:sqlite, SqlKit.Test.SQLiteRepo},
+    {:tds, SqlKit.Test.TdsRepo},
+    {:clickhouse, SqlKit.Test.ClickHouseRepo}
   ]
 
   @doc """
@@ -50,7 +50,7 @@ defmodule SqlDir.TestSetup do
 
     # Clean up SQLite files
     for postfix <- ["db", "db-shm", "db-wal"] do
-      db_file = "test/support/sql_dir_test.#{postfix}"
+      db_file = "test/support/sql_kit_test.#{postfix}"
       File.exists?(db_file) && File.rm(db_file)
     end
 
@@ -131,7 +131,7 @@ defmodule SqlDir.TestSetup do
       WHERE TABLE_NAME = 'users'
       """)
 
-    {_, [[count]]} = SqlDir.extract_result(result)
+    {_, [[count]]} = SqlKit.extract_result(result)
 
     if count == 0 do
       repo.query!("""

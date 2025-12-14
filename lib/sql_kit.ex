@@ -1,12 +1,34 @@
 # credo:disable-for-this-file Credo.Check.Refactor.LongQuoteBlocks
-defmodule SqlDir do
+defmodule SqlKit do
   @moduledoc """
-  Load SQL files at compile-time for production, read from disk in dev/test.
+  A SQL toolkit for Elixir with automatic result transformation.
 
-  SqlDir provides a clean API for working with raw SQL files in Phoenix/Ecto
-  applications. SQL files are embedded in module attributes at compile time
-  to avoid file I/O when calling query functions in production, while reading
-  from disk in dev/test for rapid iteration.
+  SqlKit provides two ways to execute raw SQL with results automatically
+  transformed into maps or structs:
+
+  ## Direct SQL Execution
+
+  Execute SQL strings directly with any Ecto repo:
+
+      SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
+      # => [%{id: 1, name: "Alice", age: 30}, ...]
+
+      SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1], as: User)
+      # => %User{id: 1, name: "Alice"}
+
+  ## File-Based SQL
+
+  For larger queries, keep SQL in dedicated files with compile-time embedding:
+
+      defmodule MyApp.Reports.SQL do
+        use SqlKit,
+          otp_app: :my_app,
+          repo: MyApp.Repo,
+          dirname: "reports",
+          files: ["stats.sql"]
+      end
+
+      MyApp.Reports.SQL.query_one!("stats.sql", [report_id])
 
   ## Supported Databases
 
@@ -22,53 +44,155 @@ defmodule SqlDir do
   | SQL Server | Ecto.Adapters.Tds         | Tds      |
   | ClickHouse | Ecto.Adapters.ClickHouse  | Ch       |
 
-  ## Usage
-
-      defmodule MyApp.Reports.SQL do
-        use SqlDir,
-          otp_app: :my_app,
-          repo: MyApp.Repo,
-          dirname: "reports",
-          files: ["stats.sql", "activity.sql"]
-      end
-
-      # Get raw SQL string
-      MyApp.Reports.SQL.load!("stats.sql")
-
-      # Execute and get single row as map
-      MyApp.Reports.SQL.query_one!("stats.sql", [report_id])
-
-      # Execute and get all rows as list of maps
-      MyApp.Reports.SQL.query_all!("activity.sql", [company_id])
-
-      # Cast results to structs
-      MyApp.Reports.SQL.query_one!("stats.sql", [id], as: ReportStats)
-      MyApp.Reports.SQL.query_all!("activity.sql", [id], as: Activity)
-
   ## Configuration
 
       # config/config.exs
-      config :my_app, SqlDir,
+      config :my_app, SqlKit,
         root_sql_dir: "priv/repo/sql"  # default
 
       # config/dev.exs and config/test.exs
-      config :my_app, SqlDir,
+      config :my_app, SqlKit,
         load_sql: :dynamic  # read from disk at runtime
 
       # config/prod.exs (or rely on default)
-      config :my_app, SqlDir,
+      config :my_app, SqlKit,
         load_sql: :compiled  # use compile-time embedded SQL
 
   ## Options
 
-  - `:otp_app` (required) - Your application name
-  - `:repo` (required) - The Ecto repo module to use for queries
-  - `:dirname` (required) - Subdirectory within root_sql_dir for this module's SQL files
-  - `:files` (required) - List of SQL filenames to load
+  - `:otp_app` (required for file-based) - Your application name
+  - `:repo` (required for file-based) - The Ecto repo module to use for queries
+  - `:dirname` (required for file-based) - Subdirectory within root_sql_dir for this module's SQL files
+  - `:files` (required for file-based) - List of SQL filenames to load
   """
 
-  alias SqlDir.Config
-  alias SqlDir.Helpers
+  alias SqlKit.Config
+  alias SqlKit.Helpers
+
+  # ============================================================================
+  # Standalone Query Functions
+  # ============================================================================
+
+  @doc """
+  Executes a SQL query and returns all rows as a list of maps or structs.
+
+  ## Options
+
+  - `:as` - Struct module to cast results into
+  - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of
+    `String.to_existing_atom/1` for column names. Default: `false`
+
+  ## Examples
+
+      SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users")
+      # => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
+
+      SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
+      # => [%{id: 1, name: "Alice", age: 30}]
+
+      SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users", [], as: User)
+      # => [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
+  """
+  @spec query_all!(Ecto.Repo.t(), String.t(), list() | map(), keyword()) :: [map() | struct()]
+  def query_all!(repo, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.all!(repo, sql, params, opts)
+  end
+
+  @doc """
+  Executes a SQL query and returns all rows as a list of maps or structs.
+
+  Returns `{:ok, results}` on success, `{:error, exception}` on failure.
+
+  ## Options
+
+  - `:as` - Struct module to cast results into
+  - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of
+    `String.to_existing_atom/1` for column names. Default: `false`
+
+  ## Examples
+
+      SqlKit.query_all(MyApp.Repo, "SELECT * FROM users")
+      # => {:ok, [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]}
+  """
+  @spec query_all(Ecto.Repo.t(), String.t(), list() | map(), keyword()) ::
+          {:ok, [map() | struct()]} | {:error, term()}
+  def query_all(repo, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.all(repo, sql, params, opts)
+  end
+
+  @doc """
+  Executes a SQL query and returns exactly one row as a map or struct.
+
+  Raises `SqlKit.NoResultsError` if no rows are returned.
+  Raises `SqlKit.MultipleResultsError` if more than one row is returned.
+
+  ## Options
+
+  - `:as` - Struct module to cast result into
+  - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of
+    `String.to_existing_atom/1` for column names. Default: `false`
+  - `:query_name` - Custom identifier for exceptions (defaults to truncated SQL)
+
+  ## Examples
+
+      SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
+      # => %{id: 1, name: "Alice"}
+
+      SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1], as: User)
+      # => %User{id: 1, name: "Alice"}
+  """
+  @spec query_one!(Ecto.Repo.t(), String.t(), list() | map(), keyword()) :: map() | struct()
+  def query_one!(repo, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.one!(repo, sql, params, opts)
+  end
+
+  @doc """
+  Executes a SQL query and returns one row as a map or struct.
+
+  Returns `{:ok, result}` on exactly one result, `{:ok, nil}` on no results,
+  or `{:error, exception}` on multiple results or other errors.
+
+  ## Options
+
+  - `:as` - Struct module to cast result into
+  - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of
+    `String.to_existing_atom/1` for column names. Default: `false`
+  - `:query_name` - Custom identifier for exceptions (defaults to truncated SQL)
+
+  ## Examples
+
+      SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
+      # => {:ok, %{id: 1, name: "Alice"}}
+
+      SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [999])
+      # => {:ok, nil}
+  """
+  @spec query_one(Ecto.Repo.t(), String.t(), list() | map(), keyword()) ::
+          {:ok, map() | struct() | nil} | {:error, term()}
+  def query_one(repo, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.one(repo, sql, params, opts)
+  end
+
+  @doc """
+  Alias for `query_one!/4`. See `query_one!/4` documentation.
+  """
+  @spec query!(Ecto.Repo.t(), String.t(), list() | map(), keyword()) :: map() | struct()
+  def query!(repo, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.one!(repo, sql, params, opts)
+  end
+
+  @doc """
+  Alias for `query_one/4`. See `query_one/4` documentation.
+  """
+  @spec query(Ecto.Repo.t(), String.t(), list() | map(), keyword()) ::
+          {:ok, map() | struct() | nil} | {:error, term()}
+  def query(repo, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.one(repo, sql, params, opts)
+  end
+
+  # ============================================================================
+  # File-Based Macro
+  # ============================================================================
 
   defmacro __using__(opts) do
     otp_app = Keyword.fetch!(opts, :otp_app)
@@ -132,7 +256,7 @@ defmodule SqlDir do
       # sobelow_skip ["Traversal.FileModule"]
       @spec load!(filename :: String.t()) :: String.t()
       def load!(filename) do
-        sql_atom = SqlDir.Helpers.file_atom(filename)
+        sql_atom = SqlKit.Helpers.file_atom(filename)
 
         # Verify the file was registered at compile time
         sql_content = __MODULE__.__info__(:attributes)[sql_atom]
@@ -141,7 +265,7 @@ defmodule SqlDir do
           raise "SQL file '#{filename}' was not included in the :files list for #{inspect(__MODULE__)}"
         end
 
-        case SqlDir.Config.load_sql(@otp_app) do
+        case SqlKit.Config.load_sql(@otp_app) do
           :compiled ->
             sql_content
 
@@ -204,9 +328,7 @@ defmodule SqlDir do
       @spec query_all!(String.t(), list() | map(), keyword()) :: [map() | struct()]
       def query_all!(filename, params \\ [], opts \\ []) do
         sql = load!(filename)
-        result = @repo.query!(sql, params)
-        {columns, rows} = SqlDir.extract_result(result)
-        SqlDir.transform_rows(columns, rows, opts)
+        SqlKit.Query.all!(@repo, sql, params, opts)
       end
 
       @doc """
@@ -244,7 +366,7 @@ defmodule SqlDir do
             {:ok, row}
 
           {:ok, rows} ->
-            {:error, SqlDir.MultipleResultsError.exception(filename: filename, count: length(rows))}
+            {:error, SqlKit.MultipleResultsError.exception(filename: filename, count: length(rows))}
 
           {:error, _} = error ->
             error
@@ -254,8 +376,8 @@ defmodule SqlDir do
       @doc """
       Executes a SQL query and returns a single row as a map or struct.
 
-      Raises `SqlDir.NoResultsError` if no rows are returned.
-      Raises `SqlDir.MultipleResultsError` if more than one row is returned.
+      Raises `SqlKit.NoResultsError` if no rows are returned.
+      Raises `SqlKit.MultipleResultsError` if more than one row is returned.
 
       ## Options
 
@@ -279,13 +401,13 @@ defmodule SqlDir do
       def query_one!(filename, params \\ [], opts \\ []) do
         case query_all!(filename, params, opts) do
           [] ->
-            raise SqlDir.NoResultsError, filename: filename
+            raise SqlKit.NoResultsError, filename: filename
 
           [row] ->
             row
 
           rows ->
-            raise SqlDir.MultipleResultsError, filename: filename, count: length(rows)
+            raise SqlKit.MultipleResultsError, filename: filename, count: length(rows)
         end
       end
 
@@ -303,6 +425,10 @@ defmodule SqlDir do
       defdelegate query!(filename, params \\ [], opts \\ []), to: __MODULE__, as: :query_one!
     end
   end
+
+  # ============================================================================
+  # Utility Functions
+  # ============================================================================
 
   @doc """
   Extracts columns and rows from an Ecto database driver result.
@@ -331,10 +457,10 @@ defmodule SqlDir do
 
   ## Examples
 
-      iex> SqlDir.transform_rows(["id", "name"], [[1, "Alice"], [2, "Bob"]], [])
+      iex> SqlKit.transform_rows(["id", "name"], [[1, "Alice"], [2, "Bob"]], [])
       [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
 
-      iex> SqlDir.transform_rows(["id", "name"], [[1, "Alice"]], as: User)
+      iex> SqlKit.transform_rows(["id", "name"], [[1, "Alice"]], as: User)
       [%User{id: 1, name: "Alice"}]
   """
   # sobelow_skip ["DOS.StringToAtom"]

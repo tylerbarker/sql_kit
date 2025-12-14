@@ -1,7 +1,7 @@
-defmodule SqlDir.HelpersTest do
+defmodule SqlKit.HelpersTest do
   use ExUnit.Case, async: true
 
-  alias SqlDir.Helpers
+  alias SqlKit.Helpers
 
   describe "file_atom/1" do
     test "converts simple filename to atom" do

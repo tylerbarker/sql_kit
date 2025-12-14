@@ -1,11 +1,11 @@
-defmodule SqlDir.MixProject do
+defmodule SqlKit.MixProject do
   use Mix.Project
 
   @version "0.1.0"
 
   def project do
     [
-      app: :sql_dir,
+      app: :sql_kit,
       version: @version,
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
@@ -13,10 +13,10 @@ defmodule SqlDir.MixProject do
       deps: deps(),
       docs: docs(),
       package: package(),
-      homepage_url: "https://hex.pm/packages/sql_dir",
-      source_url: "https://github.com/tylerbarker/sql_dir",
+      homepage_url: "https://hex.pm/packages/sql_kit",
+      source_url: "https://github.com/tylerbarker/sql_kit",
       description: """
-      Execute raw SQL files like Ecto queries with automatic result transformation to maps and structs.
+      A SQL toolkit for Elixir with automatic result transformation to maps and structs.
       """
     ]
   end
@@ -26,8 +26,8 @@ defmodule SqlDir.MixProject do
       maintainers: ["Tyler Barker"],
       licenses: ["MIT"],
       links: %{
-        Changelog: "https://github.com/tylerbarker/sql_dir/blob/main/CHANGELOG.md",
-        GitHub: "https://github.com/tylerbarker/sql_dir"
+        Changelog: "https://github.com/tylerbarker/sql_kit/blob/main/CHANGELOG.md",
+        GitHub: "https://github.com/tylerbarker/sql_kit"
       },
       files: ~w(mix.exs lib README.md LICENSE.md CHANGELOG.md)
     ]
@@ -45,10 +45,10 @@ defmodule SqlDir.MixProject do
   defp docs do
     [
       main: "readme",
-      name: "SqlDir",
+      name: "SqlKit",
       source_ref: "v#{@version}",
-      canonical: "http://hexdocs.pm/sql_dir",
-      source_url: "https://github.com/tylerbarker/sql_dir",
+      canonical: "http://hexdocs.pm/sql_kit",
+      source_url: "https://github.com/tylerbarker/sql_kit",
       extras: [
         "README.md",
         "CHANGELOG.md"

@@ -1,17 +1,17 @@
-defmodule SqlDirTest do
-  use SqlDir.DataCase, async: false
+defmodule SqlKitTest do
+  use SqlKit.DataCase, async: false
 
-  alias SqlDir.Test.ClickHouseRepo
-  alias SqlDir.Test.ClickHouseSQL
-  alias SqlDir.Test.MySQLRepo
-  alias SqlDir.Test.MySQLSQL
-  alias SqlDir.Test.PostgresRepo
-  alias SqlDir.Test.PostgresSQL
-  alias SqlDir.Test.SQLiteRepo
-  alias SqlDir.Test.SQLiteSQL
-  alias SqlDir.Test.TdsRepo
-  alias SqlDir.Test.TdsSQL
-  alias SqlDir.Test.User
+  alias SqlKit.Test.ClickHouseRepo
+  alias SqlKit.Test.ClickHouseSQL
+  alias SqlKit.Test.MySQLRepo
+  alias SqlKit.Test.MySQLSQL
+  alias SqlKit.Test.PostgresRepo
+  alias SqlKit.Test.PostgresSQL
+  alias SqlKit.Test.SQLiteRepo
+  alias SqlKit.Test.SQLiteSQL
+  alias SqlKit.Test.TdsRepo
+  alias SqlKit.Test.TdsSQL
+  alias SqlKit.Test.User
 
   # Define atoms used in queries so to_existing_atom works
   _ = [:id, :name, :email, :age]
@@ -149,23 +149,23 @@ defmodule SqlDirTest do
       end
 
       test "#{adapter}: raises NoResultsError when no rows" do
-        assert_raise SqlDir.NoResultsError, ~r/expected at least one result/, fn ->
+        assert_raise SqlKit.NoResultsError, ~r/expected at least one result/, fn ->
           @sql_module.query_one!("no_users.sql")
         end
 
         # query!/3 is an alias for query_one!/3
-        assert_raise SqlDir.NoResultsError, fn ->
+        assert_raise SqlKit.NoResultsError, fn ->
           @sql_module.query!("no_users.sql")
         end
       end
 
       test "#{adapter}: raises MultipleResultsError when multiple rows" do
-        assert_raise SqlDir.MultipleResultsError, ~r/got 3/, fn ->
+        assert_raise SqlKit.MultipleResultsError, ~r/got 3/, fn ->
           @sql_module.query_one!("all_users.sql")
         end
 
         # query!/3 is an alias for query_one!/3
-        assert_raise SqlDir.MultipleResultsError, fn ->
+        assert_raise SqlKit.MultipleResultsError, fn ->
           @sql_module.query!("all_users.sql")
         end
       end
@@ -203,23 +203,23 @@ defmodule SqlDirTest do
     end
 
     test "clickhouse: raises NoResultsError when no rows" do
-      assert_raise SqlDir.NoResultsError, ~r/expected at least one result/, fn ->
+      assert_raise SqlKit.NoResultsError, ~r/expected at least one result/, fn ->
         ClickHouseSQL.query_one!("no_users.sql")
       end
 
       # query!/3 is an alias for query_one!/3
-      assert_raise SqlDir.NoResultsError, fn ->
+      assert_raise SqlKit.NoResultsError, fn ->
         ClickHouseSQL.query!("no_users.sql")
       end
     end
 
     test "clickhouse: raises MultipleResultsError when multiple rows" do
-      assert_raise SqlDir.MultipleResultsError, ~r/got 3/, fn ->
+      assert_raise SqlKit.MultipleResultsError, ~r/got 3/, fn ->
         ClickHouseSQL.query_one!("all_users.sql")
       end
 
       # query!/3 is an alias for query_one!/3
-      assert_raise SqlDir.MultipleResultsError, fn ->
+      assert_raise SqlKit.MultipleResultsError, fn ->
         ClickHouseSQL.query!("all_users.sql")
       end
     end
@@ -247,7 +247,7 @@ defmodule SqlDirTest do
       result = PostgresRepo.query!("SELECT id, name FROM users WHERE id = $1", [1])
       assert %Postgrex.Result{} = result
 
-      {columns, rows} = SqlDir.extract_result(result)
+      {columns, rows} = SqlKit.extract_result(result)
       assert columns == ["id", "name"]
       assert [[1, "Alice"]] = rows
     end
@@ -256,7 +256,7 @@ defmodule SqlDirTest do
       result = MySQLRepo.query!("SELECT id, name FROM users WHERE id = ?", [1])
       assert %MyXQL.Result{} = result
 
-      {columns, rows} = SqlDir.extract_result(result)
+      {columns, rows} = SqlKit.extract_result(result)
       assert columns == ["id", "name"]
       assert [[1, "Alice"]] = rows
     end
@@ -265,7 +265,7 @@ defmodule SqlDirTest do
       result = SQLiteRepo.query!("SELECT id, name FROM users WHERE id = ?", [1])
       assert %Exqlite.Result{} = result
 
-      {columns, rows} = SqlDir.extract_result(result)
+      {columns, rows} = SqlKit.extract_result(result)
       assert columns == ["id", "name"]
       assert [[1, "Alice"]] = rows
     end
@@ -274,7 +274,7 @@ defmodule SqlDirTest do
       result = TdsRepo.query!("SELECT id, name FROM users WHERE id = @1", [1])
       assert %Tds.Result{} = result
 
-      {columns, rows} = SqlDir.extract_result(result)
+      {columns, rows} = SqlKit.extract_result(result)
       assert columns == ["id", "name"]
       assert [[1, "Alice"]] = rows
     end
@@ -282,14 +282,14 @@ defmodule SqlDirTest do
     test "extracts columns and rows from Ch.Result" do
       result = ClickHouseRepo.query!("SELECT id, name FROM users WHERE id = {id:UInt32}", %{id: 1})
 
-      {columns, rows} = SqlDir.extract_result(result)
+      {columns, rows} = SqlKit.extract_result(result)
       assert columns == ["id", "name"]
       assert [[1, "Alice"]] = rows
     end
 
     test "raises for unsupported result type" do
       assert_raise ArgumentError, ~r/Unsupported query result type/, fn ->
-        SqlDir.extract_result(%{cols: [], rows: []})
+        SqlKit.extract_result(%{cols: [], rows: []})
       end
     end
   end
@@ -299,7 +299,7 @@ defmodule SqlDirTest do
       columns = ["id", "name"]
       rows = [[1, "Alice"], [2, "Bob"]]
 
-      result = SqlDir.transform_rows(columns, rows)
+      result = SqlKit.transform_rows(columns, rows)
 
       assert result == [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
     end
@@ -308,7 +308,7 @@ defmodule SqlDirTest do
       columns = ["id", "name"]
       rows = []
 
-      result = SqlDir.transform_rows(columns, rows)
+      result = SqlKit.transform_rows(columns, rows)
 
       assert result == []
     end
@@ -317,7 +317,7 @@ defmodule SqlDirTest do
       columns = ["id", "name", "email", "age"]
       rows = [[1, "Alice", "alice@example.com", 30]]
 
-      result = SqlDir.transform_rows(columns, rows, as: User)
+      result = SqlKit.transform_rows(columns, rows, as: User)
 
       assert result == [%User{id: 1, name: "Alice", email: "alice@example.com", age: 30}]
     end
@@ -327,7 +327,7 @@ defmodule SqlDirTest do
       rows = [["value"]]
 
       assert_raise ArgumentError, fn ->
-        SqlDir.transform_rows(columns, rows)
+        SqlKit.transform_rows(columns, rows)
       end
     end
 
@@ -335,7 +335,7 @@ defmodule SqlDirTest do
       columns = ["dynamic_column_abc"]
       rows = [["value"]]
 
-      result = SqlDir.transform_rows(columns, rows, unsafe_atoms: true)
+      result = SqlKit.transform_rows(columns, rows, unsafe_atoms: true)
 
       assert result == [%{dynamic_column_abc: "value"}]
     end
@@ -348,7 +348,7 @@ defmodule SqlDirTest do
         [2, "Bob", "bob@example.com", 25]
       ]
 
-      result = SqlDir.transform_rows(columns, rows, as: User)
+      result = SqlKit.transform_rows(columns, rows, as: User)
 
       assert length(result) == 2
       assert Enum.all?(result, &match?(%User{}, &1))
@@ -438,11 +438,11 @@ defmodule SqlDirTest do
       end
 
       test "#{adapter}: returns {:error, MultipleResultsError} when multiple results" do
-        assert {:error, %SqlDir.MultipleResultsError{count: 3}} =
+        assert {:error, %SqlKit.MultipleResultsError{count: 3}} =
                  @sql_module.query_one("all_users.sql")
 
         # query/3 is an alias for query_one/3
-        assert {:error, %SqlDir.MultipleResultsError{count: 3}} =
+        assert {:error, %SqlKit.MultipleResultsError{count: 3}} =
                  @sql_module.query("all_users.sql")
       end
 
@@ -479,11 +479,11 @@ defmodule SqlDirTest do
     end
 
     test "clickhouse: returns {:error, MultipleResultsError} when multiple results" do
-      assert {:error, %SqlDir.MultipleResultsError{count: 3}} =
+      assert {:error, %SqlKit.MultipleResultsError{count: 3}} =
                ClickHouseSQL.query_one("all_users.sql")
 
       # query/3 is an alias for query_one/3
-      assert {:error, %SqlDir.MultipleResultsError{count: 3}} =
+      assert {:error, %SqlKit.MultipleResultsError{count: 3}} =
                ClickHouseSQL.query("all_users.sql")
     end
 
@@ -577,13 +577,164 @@ defmodule SqlDirTest do
       assert_raise CompileError, fn ->
         defmodule BadSQL do
           @moduledoc false
-          use SqlDir,
-            otp_app: :sql_dir,
+          use SqlKit,
+            otp_app: :sql_kit,
             repo: PostgresRepo,
             dirname: "test_postgres",
             files: ["does_not_exist.sql"]
         end
       end
+    end
+  end
+
+  # ============================================================================
+  # Standalone Query Function Tests
+  # ============================================================================
+
+  # Helper to get the correct parameter placeholder for each adapter
+  defp param_placeholder(:postgres, n), do: "$#{n}"
+  defp param_placeholder(:mysql, _n), do: "?"
+  defp param_placeholder(:sqlite, _n), do: "?"
+  defp param_placeholder(:tds, n), do: "@#{n}"
+
+  describe "SqlKit.query_all!/4 (standalone)" do
+    for {adapter, _sql_module, repo} <- @sandbox_adapters do
+      @repo repo
+      @adapter adapter
+
+      setup do
+        setup_sandbox(@repo)
+      end
+
+      test "#{adapter}: executes SQL string directly" do
+        results = SqlKit.query_all!(@repo, "SELECT * FROM users ORDER BY id")
+
+        assert length(results) == 3
+        assert hd(results).name == "Alice"
+      end
+
+      test "#{adapter}: supports parameterized queries" do
+        placeholder = param_placeholder(@adapter, 1)
+        results = SqlKit.query_all!(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [1])
+
+        assert length(results) == 1
+        assert hd(results).name == "Alice"
+      end
+
+      test "#{adapter}: supports :as option for struct casting" do
+        results = SqlKit.query_all!(@repo, "SELECT * FROM users ORDER BY id", [], as: User)
+
+        assert length(results) == 3
+        assert Enum.all?(results, &match?(%User{}, &1))
+      end
+    end
+  end
+
+  describe "SqlKit.query_one!/4 (standalone)" do
+    for {adapter, _sql_module, repo} <- @sandbox_adapters do
+      @repo repo
+      @adapter adapter
+
+      setup do
+        setup_sandbox(@repo)
+      end
+
+      test "#{adapter}: returns single row as map" do
+        placeholder = param_placeholder(@adapter, 1)
+        result = SqlKit.query_one!(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [1])
+
+        assert result.id == 1
+        assert result.name == "Alice"
+      end
+
+      test "#{adapter}: raises NoResultsError when no rows" do
+        placeholder = param_placeholder(@adapter, 1)
+
+        assert_raise SqlKit.NoResultsError, fn ->
+          SqlKit.query_one!(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [999])
+        end
+      end
+
+      test "#{adapter}: raises MultipleResultsError when multiple rows" do
+        assert_raise SqlKit.MultipleResultsError, fn ->
+          SqlKit.query_one!(@repo, "SELECT * FROM users")
+        end
+      end
+
+      test "#{adapter}: supports custom query_name in exceptions" do
+        placeholder = param_placeholder(@adapter, 1)
+
+        error =
+          assert_raise SqlKit.NoResultsError, fn ->
+            SqlKit.query_one!(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [999], query_name: "get_user")
+          end
+
+        assert error.query == "get_user"
+      end
+    end
+  end
+
+  describe "SqlKit.query_all/4 (standalone non-bang)" do
+    for {adapter, _sql_module, repo} <- @sandbox_adapters do
+      @repo repo
+
+      setup do
+        setup_sandbox(@repo)
+      end
+
+      test "#{adapter}: returns {:ok, results} on success" do
+        assert {:ok, results} = SqlKit.query_all(@repo, "SELECT * FROM users ORDER BY id")
+        assert length(results) == 3
+      end
+
+      test "#{adapter}: returns {:error, exception} on query error" do
+        assert {:error, _} = SqlKit.query_all(@repo, "SELECT * FROM nonexistent_table")
+      end
+    end
+  end
+
+  describe "SqlKit.query_one/4 (standalone non-bang)" do
+    for {adapter, _sql_module, repo} <- @sandbox_adapters do
+      @repo repo
+      @adapter adapter
+
+      setup do
+        setup_sandbox(@repo)
+      end
+
+      test "#{adapter}: returns {:ok, result} on exactly one result" do
+        placeholder = param_placeholder(@adapter, 1)
+        assert {:ok, result} = SqlKit.query_one(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [1])
+        assert result.name == "Alice"
+      end
+
+      test "#{adapter}: returns {:ok, nil} when no results" do
+        placeholder = param_placeholder(@adapter, 1)
+        assert {:ok, nil} = SqlKit.query_one(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [999])
+      end
+
+      test "#{adapter}: returns {:error, MultipleResultsError} when multiple results" do
+        assert {:error, %SqlKit.MultipleResultsError{}} =
+                 SqlKit.query_one(@repo, "SELECT * FROM users")
+      end
+    end
+  end
+
+  describe "SqlKit.query!/4 and SqlKit.query/4 aliases" do
+    setup do
+      setup_sandbox(PostgresRepo)
+    end
+
+    test "query!/4 is an alias for query_one!/4" do
+      result1 = SqlKit.query!(PostgresRepo, "SELECT * FROM users WHERE id = $1", [1])
+      result2 = SqlKit.query_one!(PostgresRepo, "SELECT * FROM users WHERE id = $1", [1])
+      assert result1 == result2
+    end
+
+    test "query/4 is an alias for query_one/4" do
+      {:ok, result1} = SqlKit.query(PostgresRepo, "SELECT * FROM users WHERE id = $1", [1])
+      {:ok, result2} = SqlKit.query_one(PostgresRepo, "SELECT * FROM users WHERE id = $1", [1])
+      assert result1 == result2
     end
   end
 end

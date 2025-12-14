@@ -1,34 +1,34 @@
-defmodule SqlDir.Test.PostgresRepo do
+defmodule SqlKit.Test.PostgresRepo do
   @moduledoc false
   use Ecto.Repo,
-    otp_app: :sql_dir,
+    otp_app: :sql_kit,
     adapter: Ecto.Adapters.Postgres
 end
 
-defmodule SqlDir.Test.MySQLRepo do
+defmodule SqlKit.Test.MySQLRepo do
   @moduledoc false
   use Ecto.Repo,
-    otp_app: :sql_dir,
+    otp_app: :sql_kit,
     adapter: Ecto.Adapters.MyXQL
 end
 
-defmodule SqlDir.Test.SQLiteRepo do
+defmodule SqlKit.Test.SQLiteRepo do
   @moduledoc false
   use Ecto.Repo,
-    otp_app: :sql_dir,
+    otp_app: :sql_kit,
     adapter: Ecto.Adapters.SQLite3
 end
 
-defmodule SqlDir.Test.TdsRepo do
+defmodule SqlKit.Test.TdsRepo do
   @moduledoc false
   use Ecto.Repo,
-    otp_app: :sql_dir,
+    otp_app: :sql_kit,
     adapter: Ecto.Adapters.Tds
 end
 
-defmodule SqlDir.Test.ClickHouseRepo do
+defmodule SqlKit.Test.ClickHouseRepo do
   @moduledoc false
   use Ecto.Repo,
-    otp_app: :sql_dir,
+    otp_app: :sql_kit,
     adapter: Ecto.Adapters.ClickHouse
 end

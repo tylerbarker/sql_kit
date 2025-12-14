@@ -1,6 +1,6 @@
-defmodule SqlDir.Helpers do
+defmodule SqlKit.Helpers do
   @moduledoc """
-  Compile-time helper functions for SqlDir.
+  Compile-time helper functions for SqlKit.
   """
 
   @doc """
@@ -11,10 +11,10 @@ defmodule SqlDir.Helpers do
 
   ## Examples
 
-      iex> SqlDir.Helpers.file_atom("stats_query.sql")
+      iex> SqlKit.Helpers.file_atom("stats_query.sql")
       :stats_query_sql
 
-      iex> SqlDir.Helpers.file_atom("my-complex.query.sql")
+      iex> SqlKit.Helpers.file_atom("my-complex.query.sql")
       :my_complex_query_sql
   """
   # sobelow_skip ["DOS.StringToAtom"]
