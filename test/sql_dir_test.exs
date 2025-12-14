@@ -133,6 +133,9 @@ defmodule SqlDirTest do
 
         assert result.id == 1
         assert result.name == "Alice"
+
+        # query!/3 is an alias for query_one!/3
+        assert @sql_module.query!("first_user.sql") == result
       end
 
       test "#{adapter}: returns result with parameterized query" do
@@ -140,17 +143,30 @@ defmodule SqlDirTest do
 
         assert result.id == 2
         assert result.name == "Bob"
+
+        # query!/3 is an alias for query_one!/3
+        assert @sql_module.query!("user_by_id.sql", [2]) == result
       end
 
       test "#{adapter}: raises NoResultsError when no rows" do
         assert_raise SqlDir.NoResultsError, ~r/expected at least one result/, fn ->
           @sql_module.query_one!("no_users.sql")
         end
+
+        # query!/3 is an alias for query_one!/3
+        assert_raise SqlDir.NoResultsError, fn ->
+          @sql_module.query!("no_users.sql")
+        end
       end
 
       test "#{adapter}: raises MultipleResultsError when multiple rows" do
         assert_raise SqlDir.MultipleResultsError, ~r/got 3/, fn ->
           @sql_module.query_one!("all_users.sql")
+        end
+
+        # query!/3 is an alias for query_one!/3
+        assert_raise SqlDir.MultipleResultsError, fn ->
+          @sql_module.query!("all_users.sql")
         end
       end
 
@@ -159,6 +175,9 @@ defmodule SqlDirTest do
 
         assert %User{} = result
         assert result.name == "Alice"
+
+        # query!/3 is an alias for query_one!/3
+        assert @sql_module.query!("first_user.sql", [], as: User) == result
       end
     end
 
@@ -168,6 +187,9 @@ defmodule SqlDirTest do
 
       assert result.id == 1
       assert result.name == "Alice"
+
+      # query!/3 is an alias for query_one!/3
+      assert ClickHouseSQL.query!("first_user.sql") == result
     end
 
     test "clickhouse: returns result with parameterized query" do
@@ -175,17 +197,30 @@ defmodule SqlDirTest do
 
       assert result.id == 2
       assert result.name == "Bob"
+
+      # query!/3 is an alias for query_one!/3
+      assert ClickHouseSQL.query!("user_by_id.sql", %{id: 2}) == result
     end
 
     test "clickhouse: raises NoResultsError when no rows" do
       assert_raise SqlDir.NoResultsError, ~r/expected at least one result/, fn ->
         ClickHouseSQL.query_one!("no_users.sql")
       end
+
+      # query!/3 is an alias for query_one!/3
+      assert_raise SqlDir.NoResultsError, fn ->
+        ClickHouseSQL.query!("no_users.sql")
+      end
     end
 
     test "clickhouse: raises MultipleResultsError when multiple rows" do
       assert_raise SqlDir.MultipleResultsError, ~r/got 3/, fn ->
         ClickHouseSQL.query_one!("all_users.sql")
+      end
+
+      # query!/3 is an alias for query_one!/3
+      assert_raise SqlDir.MultipleResultsError, fn ->
+        ClickHouseSQL.query!("all_users.sql")
       end
     end
 
@@ -194,6 +229,9 @@ defmodule SqlDirTest do
 
       assert %User{} = result
       assert result.name == "Alice"
+
+      # query!/3 is an alias for query_one!/3
+      assert ClickHouseSQL.query!("first_user.sql", [], as: User) == result
     end
   end
 
@@ -253,6 +291,68 @@ defmodule SqlDirTest do
       assert_raise ArgumentError, ~r/Unsupported query result type/, fn ->
         SqlDir.extract_result(%{cols: [], rows: []})
       end
+    end
+  end
+
+  describe "transform_rows/3" do
+    test "transforms columns and rows into list of maps" do
+      columns = ["id", "name"]
+      rows = [[1, "Alice"], [2, "Bob"]]
+
+      result = SqlDir.transform_rows(columns, rows)
+
+      assert result == [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
+    end
+
+    test "returns empty list for empty rows" do
+      columns = ["id", "name"]
+      rows = []
+
+      result = SqlDir.transform_rows(columns, rows)
+
+      assert result == []
+    end
+
+    test "casts to struct with :as option" do
+      columns = ["id", "name", "email", "age"]
+      rows = [[1, "Alice", "alice@example.com", 30]]
+
+      result = SqlDir.transform_rows(columns, rows, as: User)
+
+      assert result == [%User{id: 1, name: "Alice", email: "alice@example.com", age: 30}]
+    end
+
+    test "raises ArgumentError for non-existent atoms by default" do
+      columns = ["nonexistent_column_xyz"]
+      rows = [["value"]]
+
+      assert_raise ArgumentError, fn ->
+        SqlDir.transform_rows(columns, rows)
+      end
+    end
+
+    test "creates atoms dynamically with unsafe_atoms: true" do
+      columns = ["dynamic_column_abc"]
+      rows = [["value"]]
+
+      result = SqlDir.transform_rows(columns, rows, unsafe_atoms: true)
+
+      assert result == [%{dynamic_column_abc: "value"}]
+    end
+
+    test "handles multiple rows with struct casting" do
+      columns = ["id", "name", "email", "age"]
+
+      rows = [
+        [1, "Alice", "alice@example.com", 30],
+        [2, "Bob", "bob@example.com", 25]
+      ]
+
+      result = SqlDir.transform_rows(columns, rows, as: User)
+
+      assert length(result) == 2
+      assert Enum.all?(result, &match?(%User{}, &1))
+      assert hd(result).name == "Alice"
     end
   end
 
@@ -325,23 +425,39 @@ defmodule SqlDirTest do
         assert {:ok, result} = @sql_module.query_one("first_user.sql")
         assert result.id == 1
         assert result.name == "Alice"
+
+        # query/3 is an alias for query_one/3
+        assert {:ok, ^result} = @sql_module.query("first_user.sql")
       end
 
       test "#{adapter}: returns {:ok, nil} when no results" do
         assert {:ok, nil} = @sql_module.query_one("no_users.sql")
+
+        # query/3 is an alias for query_one/3
+        assert {:ok, nil} = @sql_module.query("no_users.sql")
       end
 
       test "#{adapter}: returns {:error, MultipleResultsError} when multiple results" do
         assert {:error, %SqlDir.MultipleResultsError{count: 3}} =
                  @sql_module.query_one("all_users.sql")
+
+        # query/3 is an alias for query_one/3
+        assert {:error, %SqlDir.MultipleResultsError{count: 3}} =
+                 @sql_module.query("all_users.sql")
       end
 
       test "#{adapter}: returns {:error, exception} on query error" do
         assert {:error, %RuntimeError{}} = @sql_module.query_one("nonexistent.sql")
+
+        # query/3 is an alias for query_one/3
+        assert {:error, %RuntimeError{}} = @sql_module.query("nonexistent.sql")
       end
 
       test "#{adapter}: casts to struct with :as option" do
         assert {:ok, %User{name: "Alice"}} = @sql_module.query_one("first_user.sql", [], as: User)
+
+        # query/3 is an alias for query_one/3
+        assert {:ok, %User{name: "Alice"}} = @sql_module.query("first_user.sql", [], as: User)
       end
     end
 
@@ -350,23 +466,39 @@ defmodule SqlDirTest do
       assert {:ok, result} = ClickHouseSQL.query_one("first_user.sql")
       assert result.id == 1
       assert result.name == "Alice"
+
+      # query/3 is an alias for query_one/3
+      assert {:ok, ^result} = ClickHouseSQL.query("first_user.sql")
     end
 
     test "clickhouse: returns {:ok, nil} when no results" do
       assert {:ok, nil} = ClickHouseSQL.query_one("no_users.sql")
+
+      # query/3 is an alias for query_one/3
+      assert {:ok, nil} = ClickHouseSQL.query("no_users.sql")
     end
 
     test "clickhouse: returns {:error, MultipleResultsError} when multiple results" do
       assert {:error, %SqlDir.MultipleResultsError{count: 3}} =
                ClickHouseSQL.query_one("all_users.sql")
+
+      # query/3 is an alias for query_one/3
+      assert {:error, %SqlDir.MultipleResultsError{count: 3}} =
+               ClickHouseSQL.query("all_users.sql")
     end
 
     test "clickhouse: returns {:error, exception} on query error" do
       assert {:error, %RuntimeError{}} = ClickHouseSQL.query_one("nonexistent.sql")
+
+      # query/3 is an alias for query_one/3
+      assert {:error, %RuntimeError{}} = ClickHouseSQL.query("nonexistent.sql")
     end
 
     test "clickhouse: casts to struct with :as option" do
       assert {:ok, %User{name: "Alice"}} = ClickHouseSQL.query_one("first_user.sql", [], as: User)
+
+      # query/3 is an alias for query_one/3
+      assert {:ok, %User{name: "Alice"}} = ClickHouseSQL.query("first_user.sql", [], as: User)
     end
   end
 

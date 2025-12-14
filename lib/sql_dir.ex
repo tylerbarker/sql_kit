@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Refactor.LongQuoteBlocks
 defmodule SqlDir do
   @moduledoc """
   Load SQL files at compile-time for production, read from disk in dev/test.
@@ -15,8 +16,9 @@ defmodule SqlDir do
   | Database   | Ecto Adapter              | Driver   |
   |------------|---------------------------|----------|
   | PostgreSQL | Ecto.Adapters.Postgres    | Postgrex |
-  | MySQL      | Ecto.Adapters.MyXQL       | MyXQL    |
   | SQLite     | Ecto.Adapters.SQLite3     | Exqlite  |
+  | MySQL      | Ecto.Adapters.MyXQL       | MyXQL    |
+  | MariaDB    | Ecto.Adapters.MyXQL       | MyXQL    |
   | SQL Server | Ecto.Adapters.Tds         | Tds      |
   | ClickHouse | Ecto.Adapters.ClickHouse  | Ch       |
 
@@ -127,6 +129,7 @@ defmodule SqlDir do
 
       Raises on error.
       """
+      # sobelow_skip ["Traversal.FileModule"]
       @spec load!(filename :: String.t()) :: String.t()
       def load!(filename) do
         sql_atom = SqlDir.Helpers.file_atom(filename)
@@ -163,8 +166,12 @@ defmodule SqlDir do
 
           SQL.query_all("users.sql", [company_id])
           # => {:ok, [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]}
+
+          # ClickHouse uses named parameters as a map
+          ClickHouseSQL.query_all("users.sql", %{company_id: 123})
+          # => {:ok, [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]}
       """
-      @spec query_all(String.t(), list(), keyword()) :: {:ok, [map() | struct()]} | {:error, term()}
+      @spec query_all(String.t(), list() | map(), keyword()) :: {:ok, [map() | struct()]} | {:error, term()}
       def query_all(filename, params \\ [], opts \\ []) do
         {:ok, query_all!(filename, params, opts)}
       rescue
@@ -189,36 +196,17 @@ defmodule SqlDir do
 
           SQL.query_all!("users.sql", [company_id], as: User)
           # => [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
+
+          # ClickHouse uses named parameters as a map
+          ClickHouseSQL.query_all!("users.sql", %{company_id: 123})
+          # => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
       """
-      @spec query_all!(String.t(), list(), keyword()) :: [map() | struct()]
+      @spec query_all!(String.t(), list() | map(), keyword()) :: [map() | struct()]
       def query_all!(filename, params \\ [], opts \\ []) do
         sql = load!(filename)
         result = @repo.query!(sql, params)
         {columns, rows} = SqlDir.extract_result(result)
-
-        unsafe_atoms = Keyword.get(opts, :unsafe_atoms, false)
-
-        atom_columns =
-          if unsafe_atoms do
-            Enum.map(columns, &String.to_atom/1)
-          else
-            Enum.map(columns, &String.to_existing_atom/1)
-          end
-
-        struct_mod = Keyword.get(opts, :as)
-
-        Enum.map(rows, fn row ->
-          map =
-            atom_columns
-            |> Enum.zip(row)
-            |> Map.new()
-
-          if struct_mod do
-            struct!(struct_mod, map)
-          else
-            map
-          end
-        end)
+        SqlDir.transform_rows(columns, rows, opts)
       end
 
       @doc """
@@ -240,8 +228,12 @@ defmodule SqlDir do
 
           SQL.query_one("missing.sql", [999])
           # => {:ok, nil}
+
+          # ClickHouse uses named parameters as a map
+          ClickHouseSQL.query_one("user.sql", %{user_id: 1})
+          # => {:ok, %{id: 1, name: "Alice"}}
       """
-      @spec query_one(String.t(), list(), keyword()) ::
+      @spec query_one(String.t(), list() | map(), keyword()) ::
               {:ok, map() | struct() | nil} | {:error, term()}
       def query_one(filename, params \\ [], opts \\ []) do
         case query_all(filename, params, opts) do
@@ -278,8 +270,12 @@ defmodule SqlDir do
 
           SQL.query_one!("user.sql", [user_id], as: User)
           # => %User{id: 1, name: "Alice"}
+
+          # ClickHouse uses named parameters as a map
+          ClickHouseSQL.query_one!("user.sql", %{user_id: 1})
+          # => %{id: 1, name: "Alice"}
       """
-      @spec query_one!(String.t(), list(), keyword()) :: map() | struct()
+      @spec query_one!(String.t(), list() | map(), keyword()) :: map() | struct()
       def query_one!(filename, params \\ [], opts \\ []) do
         case query_all!(filename, params, opts) do
           [] ->
@@ -292,6 +288,19 @@ defmodule SqlDir do
             raise SqlDir.MultipleResultsError, filename: filename, count: length(rows)
         end
       end
+
+      @doc """
+      Alias for `query_one/3`. See `query_one/3` documentation.
+      """
+      @spec query(String.t(), list() | map(), keyword()) ::
+              {:ok, map() | struct() | nil} | {:error, term()}
+      defdelegate query(filename, params \\ [], opts \\ []), to: __MODULE__, as: :query_one
+
+      @doc """
+      Alias for `query_one!/3`. See `query_one!/3` documentation.
+      """
+      @spec query!(String.t(), list() | map(), keyword()) :: map() | struct()
+      defdelegate query!(filename, params \\ [], opts \\ []), to: __MODULE__, as: :query_one!
     end
   end
 
@@ -309,5 +318,50 @@ defmodule SqlDir do
   def extract_result(other) do
     raise ArgumentError,
           "Unsupported query result type: #{inspect(other)}. "
+  end
+
+  @doc """
+  Transforms raw query result columns and rows into a list of maps or structs.
+
+  ## Options
+
+  - `:as` - Struct module to cast results into
+  - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of
+    `String.to_existing_atom/1` for column names. Default: `false`
+
+  ## Examples
+
+      iex> SqlDir.transform_rows(["id", "name"], [[1, "Alice"], [2, "Bob"]], [])
+      [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
+
+      iex> SqlDir.transform_rows(["id", "name"], [[1, "Alice"]], as: User)
+      [%User{id: 1, name: "Alice"}]
+  """
+  # sobelow_skip ["DOS.StringToAtom"]
+  @spec transform_rows([String.t()], [list()], keyword()) :: [map() | struct()]
+  def transform_rows(columns, rows, opts \\ []) do
+    unsafe_atoms = Keyword.get(opts, :unsafe_atoms, false)
+
+    atom_columns =
+      if unsafe_atoms do
+        Enum.map(columns, &String.to_atom/1)
+      else
+        Enum.map(columns, &String.to_existing_atom/1)
+      end
+
+    struct_mod = Keyword.get(opts, :as)
+
+    Enum.map(rows, fn row ->
+      map =
+        atom_columns
+        |> Enum.zip(row)
+        |> Map.new()
+
+      if struct_mod do
+        struct!(struct_mod, map)
+      else
+        map
+      end
+    end)
   end
 end

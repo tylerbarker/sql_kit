@@ -17,6 +17,7 @@ defmodule SqlDir.Helpers do
       iex> SqlDir.Helpers.file_atom("my-complex.query.sql")
       :my_complex_query_sql
   """
+  # sobelow_skip ["DOS.StringToAtom"]
   @spec file_atom(String.t()) :: atom()
   def file_atom(filename) do
     filename
