@@ -429,9 +429,8 @@ defmodule SqlKit do
   # Utility Functions
   # ============================================================================
 
-  @doc """
-  Extracts columns and rows from an Ecto database driver result.
-  """
+  @doc false
+  # Extracts columns and rows from an Ecto database driver result.
   @spec extract_result(struct() | map()) :: {[String.t()], [list()]}
   def extract_result(%{columns: columns, rows: rows}), do: {columns, rows}
 
@@ -445,23 +444,8 @@ defmodule SqlKit do
           "Unsupported query result type: #{inspect(other)}. "
   end
 
-  @doc """
-  Transforms raw query result columns and rows into a list of maps or structs.
-
-  ## Options
-
-  - `:as` - Struct module to cast results into
-  - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of
-    `String.to_existing_atom/1` for column names. Default: `false`
-
-  ## Examples
-
-      iex> SqlKit.transform_rows(["id", "name"], [[1, "Alice"], [2, "Bob"]], [])
-      [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
-
-      iex> SqlKit.transform_rows(["id", "name"], [[1, "Alice"]], as: User)
-      [%User{id: 1, name: "Alice"}]
-  """
+  @doc false
+  # Transforms raw query result columns and rows into a list of maps or structs.
   # sobelow_skip ["DOS.StringToAtom"]
   @spec transform_rows([String.t()], [list()], keyword()) :: [map() | struct()]
   def transform_rows(columns, rows, opts \\ []) do
