@@ -1,10 +1,9 @@
 # credo:disable-for-this-file Credo.Check.Refactor.LongQuoteBlocks
 defmodule SqlKit do
   @moduledoc """
-  A SQL toolkit for Elixir with automatic result transformation.
+  Execute raw SQL using files or strings, automatically get maps and structs back. Built on top of ecto_sql.
 
-  SqlKit provides two ways to execute raw SQL with results automatically
-  transformed into maps or structs:
+  SqlKit provides two ways to execute raw SQL with automatic result transformation:
 
   ## Direct SQL Execution
 

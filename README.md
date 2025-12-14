@@ -1,10 +1,10 @@
 # SqlKit
 
-[Hex](https://hex.pm/packages/sql_kit) | [Documentation](https://hexdocs.pm/sql_kit)
+[Hex](https://hex.pm/packages/sql_kit) | [GitHub](https://github.com/tylerbarker/sql_kit) | [Documentation](https://hexdocs.pm/sql_kit)
 
-A SQL toolkit for Elixir with automatic result transformation to maps and structs.
+Execute raw SQL using files or strings, automatically get maps and structs back. Built on top of ecto_sql.
 
-SqlKit provides two ways to execute raw SQL with results automatically transformed into maps or structs:
+SqlKit provides two ways to execute raw SQL with automatic result transformation:
 
 1. **Direct SQL execution** - Execute SQL strings directly with any Ecto repo
 2. **File-based SQL** - Keep SQL in dedicated files with compile-time embedding
@@ -19,6 +19,7 @@ For file-based SQL, keeping queries in dedicated `.sql` files brings practical b
 
 ## Features
 
+- **Just SQL**: No DSL or special syntax to learn.
 - **Automatic result transformation**: Query results returned as maps or structs, not raw columns/rows
 - **Two APIs**: Execute SQL strings directly or load from files
 - **Compile-time embedding**: File-based SQL read once at compile time and stored as module attributes
@@ -82,7 +83,7 @@ For larger queries or better organization, keep SQL in dedicated files:
 
 #### 1. Create SQL files
 
-SQL files are housed in subdirectories under the root SQL directory. This is `priv/repo/sql` by default but is configurable via `:root_sql_dir` config option.
+SQL files are housed in subdirectories under the root SQL directory. This is `priv/repo/sql` by default but is configurable via `:root_sql_dir` config option. The `priv/` directory is recommended because these files are included in Mix releases by default.
 
 ```sql
 -- priv/repo/sql/reports/stats.sql
@@ -142,6 +143,61 @@ config :my_app, SqlKit,
 config :my_app, SqlKit,
   load_sql: :compiled  # use compile-time embedded SQL
 ```
+
+## Parameter Syntax by Database
+
+Each database uses different parameter placeholder syntax:
+
+| Database   | Syntax            | Example                                    |
+|------------|-------------------|--------------------------------------------|
+| PostgreSQL | `$1`, `$2`, ...   | `WHERE id = $1 AND age > $2`               |
+| MySQL      | `?`               | `WHERE id = ? AND age > ?`                 |
+| SQLite     | `?`               | `WHERE id = ? AND age > ?`                 |
+| SQL Server | `@1`, `@2`, ...   | `WHERE id = @1 AND age > @2`               |
+| ClickHouse | `{name:Type}`     | `WHERE id = {id:UInt32} AND age > {age:UInt32}` |
+
+### ClickHouse Named Parameters
+
+ClickHouse uses named parameters with explicit types. Pass parameters as a map:
+
+```elixir
+# SQL file: user_by_id.sql
+# SELECT * FROM users WHERE id = {id:UInt32}
+
+ClickHouseSQL.query_one!("user_by_id.sql", %{id: 1})
+```
+
+### Named Parameters for Other Databases
+
+For databases using positional parameters, wrap SqlKit calls in functions to get named parameter ergonomics:
+
+```elixir
+defmodule MyApp.Users do
+  def get_active_users(company_id, min_age) do
+    SqlKit.query_all!(MyApp.Repo, """
+      SELECT id, name, email, age
+      FROM users
+      WHERE company_id = $1
+        AND age >= $2
+        AND active = true
+      ORDER BY name
+    """, [company_id, min_age], as: User)
+  end
+end
+
+# Usage
+MyApp.Users.get_active_users(123, 21)
+# => [%User{id: 1, name: "Alice", email: "alice@example.com", age: 30}, ...]
+```
+
+This pattern gives you named parameters through Elixir function arguments while keeping queries as plain SQL.
+
+## Use SqlKit Options
+
+- `:otp_app` (required) - Your application name
+- `:repo` (required) - The Ecto repo module to use for queries
+- `:dirname` (required) - Subdirectory within root_sql_dir for this module's SQL files
+- `:files` (required) - List of SQL filenames to load
 
 ## API Reference
 
@@ -317,36 +373,6 @@ SQL.load("users.sql")
 - `:as` - Struct module to cast results into
 - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of `String.to_existing_atom/1` for column names. Default: `false`
 - `:query_name` - Custom identifier for exceptions (standalone API only; defaults to truncated SQL)
-
-## Parameter Syntax by Database
-
-Each database uses different parameter placeholder syntax:
-
-| Database   | Syntax            | Example                                    |
-|------------|-------------------|--------------------------------------------|
-| PostgreSQL | `$1`, `$2`, ...   | `WHERE id = $1 AND age > $2`               |
-| MySQL      | `?`               | `WHERE id = ? AND age > ?`                 |
-| SQLite     | `?`               | `WHERE id = ? AND age > ?`                 |
-| SQL Server | `@1`, `@2`, ...   | `WHERE id = @1 AND age > @2`               |
-| ClickHouse | `{name:Type}`     | `WHERE id = {id:UInt32} AND age > {age:UInt32}` |
-
-### ClickHouse Named Parameters
-
-ClickHouse uses named parameters with explicit types. Pass parameters as a map:
-
-```elixir
-# SQL file: user_by_id.sql
-# SELECT * FROM users WHERE id = {id:UInt32}
-
-ClickHouseSQL.query_one!("user_by_id.sql", %{id: 1})
-```
-
-## Use SqlKit Options
-
-- `:otp_app` (required) - Your application name
-- `:repo` (required) - The Ecto repo module to use for queries
-- `:dirname` (required) - Subdirectory within root_sql_dir for this module's SQL files
-- `:files` (required) - List of SQL filenames to load
 
 ## Contributing
 
