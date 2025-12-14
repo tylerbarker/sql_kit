@@ -19,7 +19,7 @@ defmodule SqlKit.MixProject do
       homepage_url: "https://hex.pm/packages/sql_kit",
       source_url: "https://github.com/tylerbarker/sql_kit",
       description: """
-      A SQL toolkit for Elixir with automatic result transformation to maps and structs.
+      Execute raw SQL in strings or .sql files, get maps and structs back.
       """
     ]
   end

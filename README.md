@@ -2,9 +2,9 @@
 
 [Hex](https://hex.pm/packages/sql_kit) | [GitHub](https://github.com/tylerbarker/sql_kit) | [Documentation](https://hexdocs.pm/sql_kit)
 
-Execute raw SQL using files or strings, automatically get maps and structs back. Built on top of ecto_sql.
+Execute raw SQL in strings or .sql files, get maps and structs back. Built on top of ecto_sql.
 
-SqlKit provides two ways to execute raw SQL with automatic result transformation:
+SqlKit provides two ways to execute SQL with automatic result transformation:
 
 1. **Direct SQL execution** - Execute SQL strings directly with any Ecto repo
 2. **File-based SQL** - Keep SQL in dedicated files with compile-time embedding
@@ -13,9 +13,9 @@ SqlKit provides two ways to execute raw SQL with automatic result transformation
 
 Sometimes raw SQL is the right tool for the job. Complex analytical queries, reports with intricate joins, or database-specific features often demand SQL that's awkward to express through an ORM.
 
-You can do this already with `Repo.query`, however `Repo.query` returns a result struct with separate `columns` and `rows` lists. Transforming this into usable maps requires boilerplate. SqlKit handles this automatically, returning maps `[%{id: 1, name: "Alice"}, ...]` or structs `[%User{id: 1, name: "Alice"}, ...]` directly.
+You can do this already with `Repo.query`, however this returns a result struct with separate `columns` and `rows` lists. SqlKit handles this for you, returning maps `[%{id: 1, name: "Alice"}, ...]` or structs `[%User{id: 1, name: "Alice"}, ...]` directly.
 
-For file-based SQL, keeping queries in dedicated `.sql` files brings practical benefits: proper syntax highlighting, SQL formatter support, and cleaner Elixir modules without large multi-line strings. It also makes your codebase more accessible to SQL-fluent team members who can read, review, and contribute queries without needing to learn Elixir first. How SQL is loaded is configurable by environment: Reading from disk in development for fast iteration, and embedding at compile time in production to eliminate unnecessary file I/O.
+For file-based SQL, keeping queries in `.sql` files brings other practical benefits like syntax highlighting, and SQL formatter support. It also makes your codebase more accessible to SQL-fluent team members who can read, review, and contribute queries without needing to learn Elixir first. How `.sql` files are loaded is configurable by environment: Reading from disk in development for fast iteration, and embedding at compile time in production to eliminate unnecessary I/O.
 
 ## Features
 

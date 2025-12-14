@@ -1,9 +1,9 @@
 # credo:disable-for-this-file Credo.Check.Refactor.LongQuoteBlocks
 defmodule SqlKit do
   @moduledoc """
-  Execute raw SQL using files or strings, automatically get maps and structs back. Built on top of ecto_sql.
+  Execute raw SQL in strings or .sql files, get maps and structs back.
 
-  SqlKit provides two ways to execute raw SQL with automatic result transformation:
+  SqlKit provides two ways to execute SQL with automatic result transformation:
 
   ## Direct SQL Execution
 
