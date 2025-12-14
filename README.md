@@ -172,7 +172,10 @@ ClickHouseSQL.query_one!("user_by_id.sql", %{id: 1})
 For databases using positional parameters, wrap SqlKit calls in functions to get named parameter ergonomics:
 
 ```elixir
+# SQL string
 defmodule MyApp.Users do
+  alias MyApp.Users.User
+
   def get_active_users(company_id, min_age) do
     SqlKit.query_all!(MyApp.Repo, """
       SELECT id, name, email, age
@@ -182,6 +185,15 @@ defmodule MyApp.Users do
         AND active = true
       ORDER BY name
     """, [company_id, min_age], as: User)
+  end
+end
+
+# SQL file
+defmodule MyApp.Users do
+  alias MyApp.Users.User
+
+  def get_active_users(company_id, min_age) do
+    MyApp.Users.SQL.query_all!("active_users.sql", [company_id, min_age], as: User)
   end
 end
 
