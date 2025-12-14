@@ -8,8 +8,8 @@ on:
 
 env:
   MIX_ENV: test
-  ELIXIR_VERSION: "1.16"
-  OTP_VERSION: "26"
+  ELIXIR_VERSION: "1.19.4"
+  OTP_VERSION: "28.3"
 
 jobs:
   check:
@@ -82,6 +82,13 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
+      - name: Create SQL Server database
+        run: |
+          sleep 10
+          docker exec ${{ job.services.mssql.id }} /opt/mssql-tools18/bin/sqlcmd \
+            -S localhost -U sa -P 'SqlKit123!' -C \
+            -Q "CREATE DATABASE sql_kit_test"
+
       - name: Restore dependencies cache
         uses: actions/cache@v4
         with:
@@ -102,13 +109,6 @@ jobs:
 
       - name: Install dependencies
         run: mix deps.get
-
-      - name: Create SQL Server database
-        run: |
-          sleep 10
-          docker exec ${{ job.services.mssql.id }} /opt/mssql-tools18/bin/sqlcmd \
-            -S localhost -U sa -P 'SqlKit123!' -C \
-            -Q "CREATE DATABASE sql_kit_test"
 
       - name: Run mix check
         run: mix check

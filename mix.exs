@@ -10,6 +10,9 @@ defmodule SqlKit.MixProject do
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
+      dialyzer: [
+        plt_add_apps: [:ex_unit]
+      ],
       deps: deps(),
       docs: docs(),
       package: package(),
@@ -64,8 +67,8 @@ defmodule SqlKit.MixProject do
       {:ecto_sqlite3, "~> 0.18", optional: true},
       {:tds, "~> 2.3", optional: true},
       {:ecto_ch, "~> 0.7", optional: true},
-      {:ex_doc, "~> 0.30", only: :dev, runtime: false, warn_if_outdated: true},
-      {:ex_check, "~> 0.16.0", only: [:dev], runtime: false},
+      {:ex_doc, "~> 0.30", only: [:dev, :test], runtime: false, warn_if_outdated: true},
+      {:ex_check, "~> 0.16.0", only: [:dev, :test], runtime: false},
       {:styler, "~> 1.10", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
