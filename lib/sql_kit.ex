@@ -72,8 +72,25 @@ defmodule SqlKit do
   # Standalone Query Functions
   # ============================================================================
 
+  @typedoc """
+  A backend for executing SQL queries.
+
+  Can be:
+  - An Ecto repo module (e.g., `MyApp.Repo`)
+  - A `SqlKit.DuckDB.Connection` struct (for direct DuckDB connections)
+  - A `SqlKit.DuckDB.Pool` name (atom) for pooled DuckDB connections
+  """
+  @type backend :: Ecto.Repo.t() | struct() | atom()
+
   @doc """
   Executes a SQL query and returns all rows as a list of maps or structs.
+
+  ## Backend
+
+  The first argument can be:
+  - An Ecto repo module (e.g., `MyApp.Repo`)
+  - A `SqlKit.DuckDB.Connection` struct
+  - A `SqlKit.DuckDB.Pool` name (atom)
 
   ## Options
 
@@ -83,6 +100,7 @@ defmodule SqlKit do
 
   ## Examples
 
+      # With Ecto repo
       SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users")
       # => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
 
@@ -91,10 +109,18 @@ defmodule SqlKit do
 
       SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users", [], as: User)
       # => [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
+
+      # With DuckDB connection
+      {:ok, conn} = SqlKit.DuckDB.connect(":memory:")
+      SqlKit.query_all!(conn, "SELECT 1 as num", [])
+      # => [%{num: 1}]
+
+      # With DuckDB pool
+      SqlKit.query_all!(MyApp.DuckDBPool, "SELECT * FROM events", [])
   """
-  @spec query_all!(Ecto.Repo.t(), String.t(), list() | map(), keyword()) :: [map() | struct()]
-  def query_all!(repo, sql, params \\ [], opts \\ []) do
-    SqlKit.Query.all!(repo, sql, params, opts)
+  @spec query_all!(backend(), String.t(), list() | map(), keyword()) :: [map() | struct()]
+  def query_all!(backend, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.all!(backend, sql, params, opts)
   end
 
   @doc """
@@ -102,21 +128,17 @@ defmodule SqlKit do
 
   Returns `{:ok, results}` on success, `{:error, exception}` on failure.
 
-  ## Options
-
-  - `:as` - Struct module to cast results into
-  - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of
-    `String.to_existing_atom/1` for column names. Default: `false`
+  See `query_all!/4` for backend and options documentation.
 
   ## Examples
 
       SqlKit.query_all(MyApp.Repo, "SELECT * FROM users")
       # => {:ok, [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]}
   """
-  @spec query_all(Ecto.Repo.t(), String.t(), list() | map(), keyword()) ::
+  @spec query_all(backend(), String.t(), list() | map(), keyword()) ::
           {:ok, [map() | struct()]} | {:error, term()}
-  def query_all(repo, sql, params \\ [], opts \\ []) do
-    SqlKit.Query.all(repo, sql, params, opts)
+  def query_all(backend, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.all(backend, sql, params, opts)
   end
 
   @doc """
@@ -124,6 +146,8 @@ defmodule SqlKit do
 
   Raises `SqlKit.NoResultsError` if no rows are returned.
   Raises `SqlKit.MultipleResultsError` if more than one row is returned.
+
+  See `query_all!/4` for backend documentation.
 
   ## Options
 
@@ -140,9 +164,9 @@ defmodule SqlKit do
       SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1], as: User)
       # => %User{id: 1, name: "Alice"}
   """
-  @spec query_one!(Ecto.Repo.t(), String.t(), list() | map(), keyword()) :: map() | struct()
-  def query_one!(repo, sql, params \\ [], opts \\ []) do
-    SqlKit.Query.one!(repo, sql, params, opts)
+  @spec query_one!(backend(), String.t(), list() | map(), keyword()) :: map() | struct()
+  def query_one!(backend, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.one!(backend, sql, params, opts)
   end
 
   @doc """
@@ -150,6 +174,8 @@ defmodule SqlKit do
 
   Returns `{:ok, result}` on exactly one result, `{:ok, nil}` on no results,
   or `{:error, exception}` on multiple results or other errors.
+
+  See `query_all!/4` for backend documentation.
 
   ## Options
 
@@ -166,27 +192,27 @@ defmodule SqlKit do
       SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [999])
       # => {:ok, nil}
   """
-  @spec query_one(Ecto.Repo.t(), String.t(), list() | map(), keyword()) ::
+  @spec query_one(backend(), String.t(), list() | map(), keyword()) ::
           {:ok, map() | struct() | nil} | {:error, term()}
-  def query_one(repo, sql, params \\ [], opts \\ []) do
-    SqlKit.Query.one(repo, sql, params, opts)
+  def query_one(backend, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.one(backend, sql, params, opts)
   end
 
   @doc """
   Alias for `query_one!/4`. See `query_one!/4` documentation.
   """
-  @spec query!(Ecto.Repo.t(), String.t(), list() | map(), keyword()) :: map() | struct()
-  def query!(repo, sql, params \\ [], opts \\ []) do
-    SqlKit.Query.one!(repo, sql, params, opts)
+  @spec query!(backend(), String.t(), list() | map(), keyword()) :: map() | struct()
+  def query!(backend, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.one!(backend, sql, params, opts)
   end
 
   @doc """
   Alias for `query_one/4`. See `query_one/4` documentation.
   """
-  @spec query(Ecto.Repo.t(), String.t(), list() | map(), keyword()) ::
+  @spec query(backend(), String.t(), list() | map(), keyword()) ::
           {:ok, map() | struct() | nil} | {:error, term()}
-  def query(repo, sql, params \\ [], opts \\ []) do
-    SqlKit.Query.one(repo, sql, params, opts)
+  def query(backend, sql, params \\ [], opts \\ []) do
+    SqlKit.Query.one(backend, sql, params, opts)
   end
 
   # ============================================================================
