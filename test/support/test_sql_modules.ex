@@ -43,6 +43,15 @@ defmodule SqlKit.Test.ClickHouseSQL do
     files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql", "users_by_age_range.sql"]
 end
 
+defmodule SqlKit.Test.DuckDBSQL do
+  @moduledoc false
+  use SqlKit,
+    otp_app: :sql_kit,
+    backend: {:duckdb, pool: SqlKit.Test.DuckDBPool},
+    dirname: "test_duckdb",
+    files: ["all_users.sql", "first_user.sql", "no_users.sql", "user_by_id.sql", "users_by_age_range.sql"]
+end
+
 # Test struct for casting
 defmodule SqlKit.Test.User do
   @moduledoc false

@@ -4,6 +4,7 @@ defmodule SqlKit.DuckDBTest do
   alias SqlKit.DuckDB
   alias SqlKit.DuckDB.Connection
   alias SqlKit.DuckDB.Pool
+  alias SqlKit.Test.DuckDBSQL
   alias SqlKit.Test.User
 
   # Define atoms used in queries so to_existing_atom works
@@ -491,6 +492,183 @@ defmodule SqlKit.DuckDBTest do
       assert %User{id: 1, name: "Alice", age: 30} = result
 
       Supervisor.stop(pool.pid)
+    end
+  end
+
+  describe "file-based SQL with DuckDB" do
+    # These tests use the SqlKit.Test.DuckDBSQL module defined in test_sql_modules.ex
+    # which uses `backend: {:duckdb, pool: SqlKit.Test.DuckDBPool}`
+
+    setup do
+      pool_name = SqlKit.Test.DuckDBPool
+      {:ok, pool} = Pool.start_link(name: pool_name, database: ":memory:", pool_size: 2)
+
+      # Set up test data matching the other database tests
+      Pool.checkout!(pool, fn conn ->
+        DuckDB.query!(conn, "CREATE TABLE users (id INTEGER, name VARCHAR, email VARCHAR, age INTEGER)", [])
+        DuckDB.query!(conn, "INSERT INTO users VALUES (1, 'Alice', 'alice@test.com', 30)", [])
+        DuckDB.query!(conn, "INSERT INTO users VALUES (2, 'Bob', 'bob@test.com', 25)", [])
+        DuckDB.query!(conn, "INSERT INTO users VALUES (3, 'Charlie', 'charlie@test.com', 35)", [])
+      end)
+
+      on_exit(fn ->
+        try do
+          if Process.alive?(pool.pid), do: Supervisor.stop(pool.pid)
+        catch
+          :exit, _ -> :ok
+        end
+      end)
+
+      %{pool: pool}
+    end
+
+    test "load! returns SQL content", _context do
+      sql = DuckDBSQL.load!("all_users.sql")
+      assert sql =~ "SELECT"
+      assert sql =~ "FROM users"
+    end
+
+    test "load returns {:ok, sql}", _context do
+      assert {:ok, sql} = DuckDBSQL.load("all_users.sql")
+      assert sql =~ "SELECT"
+    end
+
+    test "query_all! returns all rows", _context do
+      results = DuckDBSQL.query_all!("all_users.sql")
+
+      assert length(results) == 3
+      assert hd(results).name == "Alice"
+    end
+
+    test "query_all! with :as option", _context do
+      results = DuckDBSQL.query_all!("all_users.sql", [], as: User)
+
+      assert length(results) == 3
+      assert %User{id: 1, name: "Alice", email: "alice@test.com", age: 30} = hd(results)
+    end
+
+    test "query_all! with parameters", _context do
+      results = DuckDBSQL.query_all!("users_by_age_range.sql", [26, 40])
+
+      assert length(results) == 2
+      names = Enum.map(results, & &1.name)
+      assert "Alice" in names
+      assert "Charlie" in names
+    end
+
+    test "query_all returns {:ok, results}", _context do
+      assert {:ok, results} = DuckDBSQL.query_all("all_users.sql")
+      assert length(results) == 3
+    end
+
+    test "query_one! returns single row", _context do
+      result = DuckDBSQL.query_one!("first_user.sql")
+
+      assert result.id == 1
+      assert result.name == "Alice"
+    end
+
+    test "query_one! with parameter", _context do
+      result = DuckDBSQL.query_one!("user_by_id.sql", [2])
+
+      assert result.id == 2
+      assert result.name == "Bob"
+    end
+
+    test "query_one! with :as option", _context do
+      result = DuckDBSQL.query_one!("user_by_id.sql", [1], as: User)
+
+      assert %User{id: 1, name: "Alice", email: "alice@test.com", age: 30} = result
+    end
+
+    test "query_one! raises NoResultsError for no matches", _context do
+      assert_raise SqlKit.NoResultsError, fn ->
+        DuckDBSQL.query_one!("no_users.sql")
+      end
+    end
+
+    test "query_one! raises MultipleResultsError for multiple matches", _context do
+      assert_raise SqlKit.MultipleResultsError, fn ->
+        DuckDBSQL.query_one!("all_users.sql")
+      end
+    end
+
+    test "query_one returns {:ok, result}", _context do
+      assert {:ok, result} = DuckDBSQL.query_one("first_user.sql")
+      assert result.name == "Alice"
+    end
+
+    test "query_one returns {:ok, nil} for no results", _context do
+      assert {:ok, nil} = DuckDBSQL.query_one("no_users.sql")
+    end
+
+    test "query!/3 is alias for query_one!/3", _context do
+      result = DuckDBSQL.query!("user_by_id.sql", [1])
+      assert result.name == "Alice"
+    end
+
+    test "query/3 is alias for query_one/3", _context do
+      assert {:ok, result} = DuckDBSQL.query("user_by_id.sql", [1])
+      assert result.name == "Alice"
+    end
+  end
+
+  describe "file-based SQL with persistent database" do
+    setup do
+      path = Path.join(System.tmp_dir!(), "sqlkit_filebased_#{:erlang.unique_integer([:positive])}.duckdb")
+
+      on_exit(fn ->
+        File.rm(path)
+        File.rm(path <> ".wal")
+      end)
+
+      %{db_path: path}
+    end
+
+    test "queries work with file-based pool and data persists across restarts", %{db_path: path} do
+      pool_name = SqlKit.Test.DuckDBPool
+
+      # Start pool with file-based database
+      {:ok, pool} = Pool.start_link(name: pool_name, database: path, pool_size: 2)
+
+      # Set up test data
+      Pool.checkout!(pool, fn conn ->
+        DuckDB.query!(conn, "CREATE TABLE users (id INTEGER, name VARCHAR, email VARCHAR, age INTEGER)", [])
+        DuckDB.query!(conn, "INSERT INTO users VALUES (1, 'Alice', 'alice@test.com', 30)", [])
+        DuckDB.query!(conn, "INSERT INTO users VALUES (2, 'Bob', 'bob@test.com', 25)", [])
+        DuckDB.query!(conn, "INSERT INTO users VALUES (3, 'Charlie', 'charlie@test.com', 35)", [])
+      end)
+
+      # Query using file-based SQL module
+      results = DuckDBSQL.query_all!("all_users.sql")
+      assert length(results) == 3
+      assert hd(results).name == "Alice"
+
+      # Query with parameters
+      result = DuckDBSQL.query_one!("user_by_id.sql", [2])
+      assert result.name == "Bob"
+
+      # Stop the pool completely
+      Supervisor.stop(pool.pid)
+      refute Process.alive?(pool.pid)
+
+      # Start a new pool with the same database file
+      {:ok, pool2} = Pool.start_link(name: pool_name, database: path, pool_size: 2)
+
+      # Data should still be there - query using file-based SQL module
+      results2 = DuckDBSQL.query_all!("all_users.sql")
+      assert length(results2) == 3
+
+      # Verify specific queries still work
+      result2 = DuckDBSQL.query_one!("user_by_id.sql", [3])
+      assert result2.name == "Charlie"
+
+      # Test with :as option after restart
+      users = DuckDBSQL.query_all!("all_users.sql", [], as: User)
+      assert length(users) == 3
+      assert %User{id: 1, name: "Alice"} = hd(users)
+
+      Supervisor.stop(pool2.pid)
     end
   end
 end

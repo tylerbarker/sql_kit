@@ -29,6 +29,30 @@ defmodule SqlKit do
 
       MyApp.Reports.SQL.query_one!("stats.sql", [report_id])
 
+  ### DuckDB File-Based SQL
+
+  For DuckDB, use the `:backend` option instead of `:repo`. The pool must be
+  started in your supervision tree with the database configuration:
+
+      # In your application.ex supervision tree:
+      children = [
+        {SqlKit.DuckDB.Pool,
+          name: MyApp.AnalyticsPool,
+          database: "priv/analytics.duckdb",
+          pool_size: 4}
+      ]
+
+      # Then define your SQL module:
+      defmodule MyApp.Analytics.SQL do
+        use SqlKit,
+          otp_app: :my_app,
+          backend: {:duckdb, pool: MyApp.AnalyticsPool},
+          dirname: "analytics",
+          files: ["daily_summary.sql"]
+      end
+
+      MyApp.Analytics.SQL.query_all!("daily_summary.sql", [~D[2024-01-01]])
+
   ## Supported Databases
 
   Any Ecto adapter returning a result map containing rows and columns should work.
@@ -59,10 +83,14 @@ defmodule SqlKit do
 
   ## Options
 
-  - `:otp_app` (required for file-based) - Your application name
-  - `:repo` (required for file-based) - The Ecto repo module to use for queries
-  - `:dirname` (required for file-based) - Subdirectory within root_sql_dir for this module's SQL files
-  - `:files` (required for file-based) - List of SQL filenames to load
+  - `:otp_app` (required) - Your application name
+  - `:repo` - The Ecto repo module to use for queries (required unless `:backend` is specified)
+  - `:backend` - Alternative to `:repo` for non-Ecto databases. Currently supports:
+    - `{:duckdb, pool: PoolName}` - Use a DuckDB connection pool
+  - `:dirname` (required) - Subdirectory within root_sql_dir for this module's SQL files
+  - `:files` (required) - List of SQL filenames to load
+
+  Note: You must specify either `:repo` or `:backend`, but not both.
   """
 
   alias SqlKit.Config
@@ -219,11 +247,80 @@ defmodule SqlKit do
   # File-Based Macro
   # ============================================================================
 
+  # Validates backend configuration at compile time.
+  # Returns {:ecto, repo_module} or {:duckdb, %{pool: pool_name}}
+  @doc false
+  def validate_backend_config!(opts, caller) do
+    repo = Keyword.get(opts, :repo)
+    backend = Keyword.get(opts, :backend)
+
+    cond do
+      repo != nil and backend != nil ->
+        raise CompileError,
+          description:
+            "Cannot specify both :repo and :backend options. Use :repo for Ecto repos or :backend for DuckDB pools.",
+          file: caller.file,
+          line: caller.line
+
+      repo != nil ->
+        expanded_repo = Macro.expand(repo, caller)
+
+        if not is_atom(expanded_repo) do
+          raise CompileError,
+            description: ":repo must be an atom (module name). Got: #{inspect(repo)}",
+            file: caller.file,
+            line: caller.line
+        end
+
+        {:ecto, expanded_repo}
+
+      backend != nil ->
+        validate_backend_option!(backend, caller)
+
+      true ->
+        raise CompileError,
+          description: "Missing required option: either :repo or :backend must be specified.",
+          file: caller.file,
+          line: caller.line
+    end
+  end
+
+  defp validate_backend_option!({:duckdb, duckdb_opts}, caller) when is_list(duckdb_opts) do
+    pool = Keyword.get(duckdb_opts, :pool)
+
+    if pool == nil do
+      raise CompileError,
+        description: "DuckDB backend requires :pool option. Example: backend: {:duckdb, pool: MyApp.DuckDBPool}",
+        file: caller.file,
+        line: caller.line
+    end
+
+    expanded_pool = Macro.expand(pool, caller)
+
+    if not is_atom(expanded_pool) do
+      raise CompileError,
+        description: "DuckDB :pool must be an atom (module name). Got: #{inspect(pool)}",
+        file: caller.file,
+        line: caller.line
+    end
+
+    {:duckdb, %{pool: expanded_pool}}
+  end
+
+  defp validate_backend_option!(other, caller) do
+    raise CompileError,
+      description: "Invalid :backend option. Expected {:duckdb, pool: PoolName}, got: #{inspect(other)}",
+      file: caller.file,
+      line: caller.line
+  end
+
   defmacro __using__(opts) do
     otp_app = Keyword.fetch!(opts, :otp_app)
-    repo = Keyword.fetch!(opts, :repo)
     dirname = Keyword.fetch!(opts, :dirname)
     files = Keyword.fetch!(opts, :files)
+
+    # Validate backend configuration - either :repo or :backend required
+    {backend_type, backend_config} = validate_backend_config!(opts, __CALLER__)
 
     # Build the SQL directory path at compile time
     root_sql_dir = Config.root_sql_dir(otp_app)
@@ -252,7 +349,8 @@ defmodule SqlKit do
 
     quote do
       @otp_app unquote(otp_app)
-      @repo unquote(repo)
+      @backend_type unquote(backend_type)
+      @backend_config unquote(Macro.escape(backend_config))
       @sql_dir unquote(sql_dir)
 
       @doc """
@@ -353,7 +451,21 @@ defmodule SqlKit do
       @spec query_all!(String.t(), list() | map(), keyword()) :: [map() | struct()]
       def query_all!(filename, params \\ [], opts \\ []) do
         sql = load!(filename)
-        SqlKit.Query.all!(@repo, sql, params, opts)
+        backend = get_backend()
+        SqlKit.Query.all!(backend, sql, params, opts)
+      end
+
+      # Returns the configured backend for query execution.
+      # For Ecto repos, returns the repo module.
+      # For DuckDB pools, returns a pool reference struct.
+      @doc false
+      case @backend_type do
+        :ecto ->
+          def get_backend, do: @backend_config
+
+        :duckdb ->
+          @pool_name @backend_config.pool
+          def get_backend, do: SqlKit.DuckDB.Pool.pool(@pool_name)
       end
 
       @doc """
