@@ -45,7 +45,7 @@ defmodule SqlKitTest do
     end
   end
 
-  describe "query_all!/3" do
+  describe "query_all/3" do
     # Tests for adapters that support sandbox
     for {adapter, sql_module, repo} <- @sandbox_adapters do
       @sql_module sql_module
@@ -56,7 +56,7 @@ defmodule SqlKitTest do
       end
 
       test "#{adapter}: returns list of maps" do
-        results = @sql_module.query_all!("all_users.sql")
+        results = @sql_module.query_all("all_users.sql")
 
         assert length(results) == 3
         assert Enum.all?(results, &is_map/1)
@@ -67,28 +67,34 @@ defmodule SqlKitTest do
       end
 
       test "#{adapter}: casts to struct with :as option" do
-        results = @sql_module.query_all!("all_users.sql", [], as: User)
+        results = @sql_module.query_all("all_users.sql", [], as: User)
 
         assert length(results) == 3
         assert Enum.all?(results, &match?(%User{}, &1))
       end
 
       test "#{adapter}: returns empty list when no results" do
-        results = @sql_module.query_all!("no_users.sql")
+        results = @sql_module.query_all("no_users.sql")
         assert results == []
       end
 
       test "#{adapter}: passes parameters to query" do
-        results = @sql_module.query_all!("user_by_id.sql", [1])
+        results = @sql_module.query_all("user_by_id.sql", [1])
 
         assert length(results) == 1
         assert hd(results).name == "Alice"
+      end
+
+      test "#{adapter}: raises on file load error" do
+        assert_raise RuntimeError, ~r/was not included in the :files list/, fn ->
+          @sql_module.query_all("nonexistent.sql")
+        end
       end
     end
 
     # ClickHouse tests (no sandbox support)
     test "clickhouse: returns list of maps" do
-      results = ClickHouseSQL.query_all!("all_users.sql")
+      results = ClickHouseSQL.query_all("all_users.sql")
 
       assert length(results) == 3
       assert Enum.all?(results, &is_map/1)
@@ -99,22 +105,28 @@ defmodule SqlKitTest do
     end
 
     test "clickhouse: casts to struct with :as option" do
-      results = ClickHouseSQL.query_all!("all_users.sql", [], as: User)
+      results = ClickHouseSQL.query_all("all_users.sql", [], as: User)
 
       assert length(results) == 3
       assert Enum.all?(results, &match?(%User{}, &1))
     end
 
     test "clickhouse: returns empty list when no results" do
-      results = ClickHouseSQL.query_all!("no_users.sql")
+      results = ClickHouseSQL.query_all("no_users.sql")
       assert results == []
     end
 
     test "clickhouse: passes parameters to query" do
-      results = ClickHouseSQL.query_all!("user_by_id.sql", %{id: 1})
+      results = ClickHouseSQL.query_all("user_by_id.sql", %{id: 1})
 
       assert length(results) == 1
       assert hd(results).name == "Alice"
+    end
+
+    test "clickhouse: raises on file load error" do
+      assert_raise RuntimeError, ~r/was not included in the :files list/, fn ->
+        ClickHouseSQL.query_all("nonexistent.sql")
+      end
     end
   end
 
@@ -372,7 +384,7 @@ defmodule SqlKitTest do
     end
   end
 
-  describe "query_all/3 (non-bang)" do
+  describe "query_one/3" do
     for {adapter, sql_module, repo} <- @sandbox_adapters do
       @sql_module sql_module
       @repo repo
@@ -381,124 +393,96 @@ defmodule SqlKitTest do
         setup_sandbox(@repo)
       end
 
-      test "#{adapter}: returns {:ok, results} on success" do
-        assert {:ok, results} = @sql_module.query_all("all_users.sql")
-        assert length(results) == 3
-        assert hd(results).name == "Alice"
-      end
-
-      test "#{adapter}: returns {:ok, []} when no results" do
-        assert {:ok, []} = @sql_module.query_all("no_users.sql")
-      end
-
-      test "#{adapter}: returns {:error, exception} on query error" do
-        assert {:error, %RuntimeError{}} = @sql_module.query_all("nonexistent.sql")
-      end
-    end
-
-    # ClickHouse tests (no sandbox support)
-    test "clickhouse: returns {:ok, results} on success" do
-      assert {:ok, results} = ClickHouseSQL.query_all("all_users.sql")
-      assert length(results) == 3
-      assert hd(results).name == "Alice"
-    end
-
-    test "clickhouse: returns {:ok, []} when no results" do
-      assert {:ok, []} = ClickHouseSQL.query_all("no_users.sql")
-    end
-
-    test "clickhouse: returns {:error, exception} on query error" do
-      assert {:error, %RuntimeError{}} = ClickHouseSQL.query_all("nonexistent.sql")
-    end
-  end
-
-  describe "query_one/3 (non-bang)" do
-    for {adapter, sql_module, repo} <- @sandbox_adapters do
-      @sql_module sql_module
-      @repo repo
-
-      setup do
-        setup_sandbox(@repo)
-      end
-
-      test "#{adapter}: returns {:ok, result} on exactly one result" do
-        assert {:ok, result} = @sql_module.query_one("first_user.sql")
+      test "#{adapter}: returns result on exactly one result" do
+        result = @sql_module.query_one("first_user.sql")
         assert result.id == 1
         assert result.name == "Alice"
 
         # query/3 is an alias for query_one/3
-        assert {:ok, ^result} = @sql_module.query("first_user.sql")
+        assert @sql_module.query("first_user.sql") == result
       end
 
-      test "#{adapter}: returns {:ok, nil} when no results" do
-        assert {:ok, nil} = @sql_module.query_one("no_users.sql")
+      test "#{adapter}: returns nil when no results" do
+        assert @sql_module.query_one("no_users.sql") == nil
 
         # query/3 is an alias for query_one/3
-        assert {:ok, nil} = @sql_module.query("no_users.sql")
+        assert @sql_module.query("no_users.sql") == nil
       end
 
-      test "#{adapter}: returns {:error, MultipleResultsError} when multiple results" do
-        assert {:error, %SqlKit.MultipleResultsError{count: 3}} =
-                 @sql_module.query_one("all_users.sql")
+      test "#{adapter}: raises MultipleResultsError when multiple results" do
+        assert_raise SqlKit.MultipleResultsError, ~r/got 3/, fn ->
+          @sql_module.query_one("all_users.sql")
+        end
 
         # query/3 is an alias for query_one/3
-        assert {:error, %SqlKit.MultipleResultsError{count: 3}} =
-                 @sql_module.query("all_users.sql")
+        assert_raise SqlKit.MultipleResultsError, fn ->
+          @sql_module.query("all_users.sql")
+        end
       end
 
-      test "#{adapter}: returns {:error, exception} on query error" do
-        assert {:error, %RuntimeError{}} = @sql_module.query_one("nonexistent.sql")
+      test "#{adapter}: raises on file load error" do
+        assert_raise RuntimeError, ~r/was not included in the :files list/, fn ->
+          @sql_module.query_one("nonexistent.sql")
+        end
 
         # query/3 is an alias for query_one/3
-        assert {:error, %RuntimeError{}} = @sql_module.query("nonexistent.sql")
+        assert_raise RuntimeError, fn ->
+          @sql_module.query("nonexistent.sql")
+        end
       end
 
       test "#{adapter}: casts to struct with :as option" do
-        assert {:ok, %User{name: "Alice"}} = @sql_module.query_one("first_user.sql", [], as: User)
+        assert %User{name: "Alice"} = @sql_module.query_one("first_user.sql", [], as: User)
 
         # query/3 is an alias for query_one/3
-        assert {:ok, %User{name: "Alice"}} = @sql_module.query("first_user.sql", [], as: User)
+        assert %User{name: "Alice"} = @sql_module.query("first_user.sql", [], as: User)
       end
     end
 
     # ClickHouse tests (no sandbox support)
-    test "clickhouse: returns {:ok, result} on exactly one result" do
-      assert {:ok, result} = ClickHouseSQL.query_one("first_user.sql")
+    test "clickhouse: returns result on exactly one result" do
+      result = ClickHouseSQL.query_one("first_user.sql")
       assert result.id == 1
       assert result.name == "Alice"
 
       # query/3 is an alias for query_one/3
-      assert {:ok, ^result} = ClickHouseSQL.query("first_user.sql")
+      assert ClickHouseSQL.query("first_user.sql") == result
     end
 
-    test "clickhouse: returns {:ok, nil} when no results" do
-      assert {:ok, nil} = ClickHouseSQL.query_one("no_users.sql")
+    test "clickhouse: returns nil when no results" do
+      assert ClickHouseSQL.query_one("no_users.sql") == nil
 
       # query/3 is an alias for query_one/3
-      assert {:ok, nil} = ClickHouseSQL.query("no_users.sql")
+      assert ClickHouseSQL.query("no_users.sql") == nil
     end
 
-    test "clickhouse: returns {:error, MultipleResultsError} when multiple results" do
-      assert {:error, %SqlKit.MultipleResultsError{count: 3}} =
-               ClickHouseSQL.query_one("all_users.sql")
+    test "clickhouse: raises MultipleResultsError when multiple results" do
+      assert_raise SqlKit.MultipleResultsError, ~r/got 3/, fn ->
+        ClickHouseSQL.query_one("all_users.sql")
+      end
 
       # query/3 is an alias for query_one/3
-      assert {:error, %SqlKit.MultipleResultsError{count: 3}} =
-               ClickHouseSQL.query("all_users.sql")
+      assert_raise SqlKit.MultipleResultsError, fn ->
+        ClickHouseSQL.query("all_users.sql")
+      end
     end
 
-    test "clickhouse: returns {:error, exception} on query error" do
-      assert {:error, %RuntimeError{}} = ClickHouseSQL.query_one("nonexistent.sql")
+    test "clickhouse: raises on file load error" do
+      assert_raise RuntimeError, ~r/was not included in the :files list/, fn ->
+        ClickHouseSQL.query_one("nonexistent.sql")
+      end
 
       # query/3 is an alias for query_one/3
-      assert {:error, %RuntimeError{}} = ClickHouseSQL.query("nonexistent.sql")
+      assert_raise RuntimeError, fn ->
+        ClickHouseSQL.query("nonexistent.sql")
+      end
     end
 
     test "clickhouse: casts to struct with :as option" do
-      assert {:ok, %User{name: "Alice"}} = ClickHouseSQL.query_one("first_user.sql", [], as: User)
+      assert %User{name: "Alice"} = ClickHouseSQL.query_one("first_user.sql", [], as: User)
 
       # query/3 is an alias for query_one/3
-      assert {:ok, %User{name: "Alice"}} = ClickHouseSQL.query("first_user.sql", [], as: User)
+      assert %User{name: "Alice"} = ClickHouseSQL.query("first_user.sql", [], as: User)
     end
   end
 
@@ -515,16 +499,9 @@ defmodule SqlKitTest do
         setup_sandbox(@repo)
       end
 
-      test "#{adapter}: query_all! with multiple parameters" do
-        # age >= 26 AND age <= 32 should return only Alice (30)
-        results = @sql_module.query_all!("users_by_age_range.sql", [26, 32])
-        assert length(results) == 1
-        assert hd(results).name == "Alice"
-      end
-
       test "#{adapter}: query_all with multiple parameters" do
         # age >= 24 AND age <= 31 should return Alice (30) and Bob (25)
-        assert {:ok, results} = @sql_module.query_all("users_by_age_range.sql", [24, 31])
+        results = @sql_module.query_all("users_by_age_range.sql", [24, 31])
         assert length(results) == 2
         names = Enum.map(results, & &1.name)
         assert "Alice" in names
@@ -540,20 +517,14 @@ defmodule SqlKitTest do
 
       test "#{adapter}: query_one with multiple parameters" do
         # age >= 29 AND age <= 31 should return only Alice (30)
-        assert {:ok, result} = @sql_module.query_one("users_by_age_range.sql", [29, 31])
+        result = @sql_module.query_one("users_by_age_range.sql", [29, 31])
         assert result.name == "Alice"
       end
     end
 
     # ClickHouse tests (no sandbox, uses map params)
-    test "clickhouse: query_all! with multiple parameters" do
-      results = ClickHouseSQL.query_all!("users_by_age_range.sql", %{min_age: 26, max_age: 32})
-      assert length(results) == 1
-      assert hd(results).name == "Alice"
-    end
-
     test "clickhouse: query_all with multiple parameters" do
-      assert {:ok, results} = ClickHouseSQL.query_all("users_by_age_range.sql", %{min_age: 24, max_age: 31})
+      results = ClickHouseSQL.query_all("users_by_age_range.sql", %{min_age: 24, max_age: 31})
       assert length(results) == 2
       names = Enum.map(results, & &1.name)
       assert "Alice" in names
@@ -567,7 +538,7 @@ defmodule SqlKitTest do
     end
 
     test "clickhouse: query_one with multiple parameters" do
-      assert {:ok, result} = ClickHouseSQL.query_one("users_by_age_range.sql", %{min_age: 29, max_age: 31})
+      result = ClickHouseSQL.query_one("users_by_age_range.sql", %{min_age: 29, max_age: 31})
       assert result.name == "Alice"
     end
   end
@@ -597,7 +568,7 @@ defmodule SqlKitTest do
   defp param_placeholder(:sqlite, _n), do: "?"
   defp param_placeholder(:tds, n), do: "@#{n}"
 
-  describe "SqlKit.query_all!/4 (standalone)" do
+  describe "SqlKit.query_all/4 (standalone)" do
     for {adapter, _sql_module, repo} <- @sandbox_adapters do
       @repo repo
       @adapter adapter
@@ -607,7 +578,7 @@ defmodule SqlKitTest do
       end
 
       test "#{adapter}: executes SQL string directly" do
-        results = SqlKit.query_all!(@repo, "SELECT * FROM users ORDER BY id")
+        results = SqlKit.query_all(@repo, "SELECT * FROM users ORDER BY id")
 
         assert length(results) == 3
         assert hd(results).name == "Alice"
@@ -615,14 +586,14 @@ defmodule SqlKitTest do
 
       test "#{adapter}: supports parameterized queries" do
         placeholder = param_placeholder(@adapter, 1)
-        results = SqlKit.query_all!(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [1])
+        results = SqlKit.query_all(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [1])
 
         assert length(results) == 1
         assert hd(results).name == "Alice"
       end
 
       test "#{adapter}: supports :as option for struct casting" do
-        results = SqlKit.query_all!(@repo, "SELECT * FROM users ORDER BY id", [], as: User)
+        results = SqlKit.query_all(@repo, "SELECT * FROM users ORDER BY id", [], as: User)
 
         assert length(results) == 3
         assert Enum.all?(results, &match?(%User{}, &1))
@@ -674,26 +645,7 @@ defmodule SqlKitTest do
     end
   end
 
-  describe "SqlKit.query_all/4 (standalone non-bang)" do
-    for {adapter, _sql_module, repo} <- @sandbox_adapters do
-      @repo repo
-
-      setup do
-        setup_sandbox(@repo)
-      end
-
-      test "#{adapter}: returns {:ok, results} on success" do
-        assert {:ok, results} = SqlKit.query_all(@repo, "SELECT * FROM users ORDER BY id")
-        assert length(results) == 3
-      end
-
-      test "#{adapter}: returns {:error, exception} on query error" do
-        assert {:error, _} = SqlKit.query_all(@repo, "SELECT * FROM nonexistent_table")
-      end
-    end
-  end
-
-  describe "SqlKit.query_one/4 (standalone non-bang)" do
+  describe "SqlKit.query_one/4 (standalone)" do
     for {adapter, _sql_module, repo} <- @sandbox_adapters do
       @repo repo
       @adapter adapter
@@ -702,20 +654,21 @@ defmodule SqlKitTest do
         setup_sandbox(@repo)
       end
 
-      test "#{adapter}: returns {:ok, result} on exactly one result" do
+      test "#{adapter}: returns result on exactly one result" do
         placeholder = param_placeholder(@adapter, 1)
-        assert {:ok, result} = SqlKit.query_one(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [1])
+        result = SqlKit.query_one(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [1])
         assert result.name == "Alice"
       end
 
-      test "#{adapter}: returns {:ok, nil} when no results" do
+      test "#{adapter}: returns nil when no results" do
         placeholder = param_placeholder(@adapter, 1)
-        assert {:ok, nil} = SqlKit.query_one(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [999])
+        assert SqlKit.query_one(@repo, "SELECT * FROM users WHERE id = #{placeholder}", [999]) == nil
       end
 
-      test "#{adapter}: returns {:error, MultipleResultsError} when multiple results" do
-        assert {:error, %SqlKit.MultipleResultsError{}} =
-                 SqlKit.query_one(@repo, "SELECT * FROM users")
+      test "#{adapter}: raises MultipleResultsError when multiple results" do
+        assert_raise SqlKit.MultipleResultsError, fn ->
+          SqlKit.query_one(@repo, "SELECT * FROM users")
+        end
       end
     end
   end
@@ -732,8 +685,8 @@ defmodule SqlKitTest do
     end
 
     test "query/4 is an alias for query_one/4" do
-      {:ok, result1} = SqlKit.query(PostgresRepo, "SELECT * FROM users WHERE id = $1", [1])
-      {:ok, result2} = SqlKit.query_one(PostgresRepo, "SELECT * FROM users WHERE id = $1", [1])
+      result1 = SqlKit.query(PostgresRepo, "SELECT * FROM users WHERE id = $1", [1])
+      result2 = SqlKit.query_one(PostgresRepo, "SELECT * FROM users WHERE id = $1", [1])
       assert result1 == result2
     end
   end

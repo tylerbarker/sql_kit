@@ -21,12 +21,12 @@ if Code.ensure_loaded?(Duckdbex) do
     Then use the pool with SqlKit functions using the pool reference:
 
         pool = SqlKit.DuckDB.Pool.pool(MyApp.AnalyticsPool)
-        SqlKit.query_all!(pool, "SELECT * FROM events", [])
+        SqlKit.query_all(pool, "SELECT * FROM events", [])
 
     Or get the pool reference from start_link:
 
         {:ok, pool} = SqlKit.DuckDB.Pool.start_link(name: MyPool, database: ":memory:")
-        SqlKit.query_all!(pool, "SELECT * FROM events", [])
+        SqlKit.query_all(pool, "SELECT * FROM events", [])
 
     ## Options
 
@@ -82,7 +82,7 @@ if Code.ensure_loaded?(Duckdbex) do
     ## Example
 
         pool = SqlKit.DuckDB.Pool.pool(MyApp.AnalyticsPool)
-        SqlKit.query_all!(pool, "SELECT * FROM events", [])
+        SqlKit.query_all(pool, "SELECT * FROM events", [])
     """
     @spec pool(atom()) :: t()
     def pool(name) when is_atom(name) do
@@ -189,10 +189,12 @@ if Code.ensure_loaded?(Duckdbex) do
         SqlKit.DuckDB.Pool.query!(pool, sql, params, timeout: 10_000)
 
     """
+    # sobelow_skip ["SQL.Query"]
     @spec query!(t() | atom(), String.t(), list(), keyword()) ::
             {[String.t()], [[term()]]}
     def query!(pool, sql, params, opts \\ [])
 
+    # sobelow_skip ["SQL.Query"]
     def query!(%__MODULE__{name: name}, sql, params, opts), do: query!(name, sql, params, opts)
 
     def query!(pool_name, sql, params, opts) when is_atom(pool_name) do

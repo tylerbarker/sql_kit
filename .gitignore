@@ -22,6 +22,12 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 sql_kit-*.tar
 
+# SQLite / DuckDB
+*.db
+*.db-shm
+*.db-wal
+*.duckdb
+
 # General
 .DS_Store
 __MACOSX/

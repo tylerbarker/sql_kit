@@ -9,7 +9,7 @@ defmodule SqlKit do
 
   Execute SQL strings directly with any Ecto repo:
 
-      SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
+      SqlKit.query_all(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
       # => [%{id: 1, name: "Alice", age: 30}, ...]
 
       SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1], as: User)
@@ -51,7 +51,7 @@ defmodule SqlKit do
           files: ["daily_summary.sql"]
       end
 
-      MyApp.Analytics.SQL.query_all!("daily_summary.sql", [~D[2024-01-01]])
+      MyApp.Analytics.SQL.query_all("daily_summary.sql", [~D[2024-01-01]])
 
   ## Supported Databases
 
@@ -113,6 +113,8 @@ defmodule SqlKit do
   @doc """
   Executes a SQL query and returns all rows as a list of maps or structs.
 
+  Raises on query execution errors. This matches [`Ecto.Repo.all/2`](https://hexdocs.pm/ecto/Ecto.Repo.html#c:all/2) semantics.
+
   ## Backend
 
   The first argument can be:
@@ -128,43 +130,24 @@ defmodule SqlKit do
 
   ## Examples
 
-      # With Ecto repo
-      SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users")
+      SqlKit.query_all(MyApp.Repo, "SELECT * FROM users")
       # => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
 
-      SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
+      SqlKit.query_all(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
       # => [%{id: 1, name: "Alice", age: 30}]
 
-      SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users", [], as: User)
+      SqlKit.query_all(MyApp.Repo, "SELECT * FROM users", [], as: User)
       # => [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
 
       # With DuckDB connection
       {:ok, conn} = SqlKit.DuckDB.connect(":memory:")
-      SqlKit.query_all!(conn, "SELECT 1 as num", [])
+      SqlKit.query_all(conn, "SELECT 1 as num", [])
       # => [%{num: 1}]
 
       # With DuckDB pool
-      SqlKit.query_all!(MyApp.DuckDBPool, "SELECT * FROM events", [])
+      SqlKit.query_all(MyApp.DuckDBPool, "SELECT * FROM events", [])
   """
-  @spec query_all!(backend(), String.t(), list() | map(), keyword()) :: [map() | struct()]
-  def query_all!(backend, sql, params \\ [], opts \\ []) do
-    SqlKit.Query.all!(backend, sql, params, opts)
-  end
-
-  @doc """
-  Executes a SQL query and returns all rows as a list of maps or structs.
-
-  Returns `{:ok, results}` on success, `{:error, exception}` on failure.
-
-  See `query_all!/4` for backend and options documentation.
-
-  ## Examples
-
-      SqlKit.query_all(MyApp.Repo, "SELECT * FROM users")
-      # => {:ok, [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]}
-  """
-  @spec query_all(backend(), String.t(), list() | map(), keyword()) ::
-          {:ok, [map() | struct()]} | {:error, term()}
+  @spec query_all(backend(), String.t(), list() | map(), keyword()) :: [map() | struct()]
   def query_all(backend, sql, params \\ [], opts \\ []) do
     SqlKit.Query.all(backend, sql, params, opts)
   end
@@ -175,7 +158,7 @@ defmodule SqlKit do
   Raises `SqlKit.NoResultsError` if no rows are returned.
   Raises `SqlKit.MultipleResultsError` if more than one row is returned.
 
-  See `query_all!/4` for backend documentation.
+  See `query_all/4` for backend documentation.
 
   ## Options
 
@@ -198,12 +181,13 @@ defmodule SqlKit do
   end
 
   @doc """
-  Executes a SQL query and returns one row as a map or struct.
+  Executes a SQL query and returns one row as a map or struct, or nil if no results.
 
-  Returns `{:ok, result}` on exactly one result, `{:ok, nil}` on no results,
-  or `{:error, exception}` on multiple results or other errors.
+  Returns the result directly, or nil on no results.
+  Raises `SqlKit.MultipleResultsError` if more than one row is returned.
+  Raises on query execution errors. This matches [`Ecto.Repo.one/2`](https://hexdocs.pm/ecto/Ecto.Repo.html#c:one/2) semantics.
 
-  See `query_all!/4` for backend documentation.
+  See `query_all/4` for backend documentation.
 
   ## Options
 
@@ -215,13 +199,12 @@ defmodule SqlKit do
   ## Examples
 
       SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
-      # => {:ok, %{id: 1, name: "Alice"}}
+      # => %{id: 1, name: "Alice"}
 
       SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [999])
-      # => {:ok, nil}
+      # => nil
   """
-  @spec query_one(backend(), String.t(), list() | map(), keyword()) ::
-          {:ok, map() | struct() | nil} | {:error, term()}
+  @spec query_one(backend(), String.t(), list() | map(), keyword()) :: map() | struct() | nil
   def query_one(backend, sql, params \\ [], opts \\ []) do
     SqlKit.Query.one(backend, sql, params, opts)
   end
@@ -237,8 +220,7 @@ defmodule SqlKit do
   @doc """
   Alias for `query_one/4`. See `query_one/4` documentation.
   """
-  @spec query(backend(), String.t(), list() | map(), keyword()) ::
-          {:ok, map() | struct() | nil} | {:error, term()}
+  @spec query(backend(), String.t(), list() | map(), keyword()) :: map() | struct() | nil
   def query(backend, sql, params \\ [], opts \\ []) do
     SqlKit.Query.one(backend, sql, params, opts)
   end
@@ -399,9 +381,9 @@ defmodule SqlKit do
       end
 
       @doc """
-      Executes a SQL query and returns all rows as a list of maps.
+      Executes a SQL query and returns all rows as a list of maps or structs.
 
-      Returns `{:ok, results}` on success, `{:error, exception}` on failure.
+      Raises on query execution errors. This matches [`Ecto.Repo.all/2`](https://hexdocs.pm/ecto/Ecto.Repo.html#c:all/2) semantics.
 
       ## Options
 
@@ -412,47 +394,20 @@ defmodule SqlKit do
       ## Examples
 
           SQL.query_all("users.sql", [company_id])
-          # => {:ok, [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]}
-
-          # ClickHouse uses named parameters as a map
-          ClickHouseSQL.query_all("users.sql", %{company_id: 123})
-          # => {:ok, [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]}
-      """
-      @spec query_all(String.t(), list() | map(), keyword()) :: {:ok, [map() | struct()]} | {:error, term()}
-      def query_all(filename, params \\ [], opts \\ []) do
-        {:ok, query_all!(filename, params, opts)}
-      rescue
-        e -> {:error, e}
-      end
-
-      @doc """
-      Executes a SQL query and returns all rows as a list of maps.
-
-      Raises on error.
-
-      ## Options
-
-      - `:as` - Struct module to cast results into
-      - `:unsafe_atoms` - If `true`, uses `String.to_atom/1` instead of
-        `String.to_existing_atom/1` for column names. Default: `false`
-
-      ## Examples
-
-          SQL.query_all!("users.sql", [company_id])
           # => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
 
-          SQL.query_all!("users.sql", [company_id], as: User)
+          SQL.query_all("users.sql", [company_id], as: User)
           # => [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
 
           # ClickHouse uses named parameters as a map
-          ClickHouseSQL.query_all!("users.sql", %{company_id: 123})
+          ClickHouseSQL.query_all("users.sql", %{company_id: 123})
           # => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
       """
-      @spec query_all!(String.t(), list() | map(), keyword()) :: [map() | struct()]
-      def query_all!(filename, params \\ [], opts \\ []) do
+      @spec query_all(String.t(), list() | map(), keyword()) :: [map() | struct()]
+      def query_all(filename, params \\ [], opts \\ []) do
         sql = load!(filename)
         backend = get_backend()
-        SqlKit.Query.all!(backend, sql, params, opts)
+        SqlKit.Query.all(backend, sql, params, opts)
       end
 
       # Returns the configured backend for query execution.
@@ -469,10 +424,11 @@ defmodule SqlKit do
       end
 
       @doc """
-      Executes a SQL query and returns a single row as a map or struct.
+      Executes a SQL query and returns a single row as a map or struct, or nil if no results.
 
-      Returns `{:ok, result}` on exactly one result, `{:ok, nil}` on no results,
-      or `{:error, exception}` on multiple results or other errors.
+      Returns the result directly, or nil on no results.
+      Raises `SqlKit.MultipleResultsError` if more than one row is returned.
+      Raises on query execution errors. This matches [`Ecto.Repo.one/2`](https://hexdocs.pm/ecto/Ecto.Repo.html#c:one/2) semantics.
 
       ## Options
 
@@ -483,30 +439,26 @@ defmodule SqlKit do
       ## Examples
 
           SQL.query_one("user.sql", [user_id])
-          # => {:ok, %{id: 1, name: "Alice"}}
+          # => %{id: 1, name: "Alice"}
 
           SQL.query_one("missing.sql", [999])
-          # => {:ok, nil}
+          # => nil
 
           # ClickHouse uses named parameters as a map
           ClickHouseSQL.query_one("user.sql", %{user_id: 1})
-          # => {:ok, %{id: 1, name: "Alice"}}
+          # => %{id: 1, name: "Alice"}
       """
-      @spec query_one(String.t(), list() | map(), keyword()) ::
-              {:ok, map() | struct() | nil} | {:error, term()}
+      @spec query_one(String.t(), list() | map(), keyword()) :: map() | struct() | nil
       def query_one(filename, params \\ [], opts \\ []) do
         case query_all(filename, params, opts) do
-          {:ok, []} ->
-            {:ok, nil}
+          [] ->
+            nil
 
-          {:ok, [row]} ->
-            {:ok, row}
+          [row] ->
+            row
 
-          {:ok, rows} ->
-            {:error, SqlKit.MultipleResultsError.exception(filename: filename, count: length(rows))}
-
-          {:error, _} = error ->
-            error
+          rows ->
+            raise SqlKit.MultipleResultsError, filename: filename, count: length(rows)
         end
       end
 
@@ -515,6 +467,8 @@ defmodule SqlKit do
 
       Raises `SqlKit.NoResultsError` if no rows are returned.
       Raises `SqlKit.MultipleResultsError` if more than one row is returned.
+
+      This matches [`Ecto.Repo.one!/2`](https://hexdocs.pm/ecto/Ecto.Repo.html#c:one!/2) semantics.
 
       ## Options
 
@@ -536,7 +490,7 @@ defmodule SqlKit do
       """
       @spec query_one!(String.t(), list() | map(), keyword()) :: map() | struct()
       def query_one!(filename, params \\ [], opts \\ []) do
-        case query_all!(filename, params, opts) do
+        case query_all(filename, params, opts) do
           [] ->
             raise SqlKit.NoResultsError, filename: filename
 
@@ -551,8 +505,7 @@ defmodule SqlKit do
       @doc """
       Alias for `query_one/3`. See `query_one/3` documentation.
       """
-      @spec query(String.t(), list() | map(), keyword()) ::
-              {:ok, map() | struct() | nil} | {:error, term()}
+      @spec query(String.t(), list() | map(), keyword()) :: map() | struct() | nil
       defdelegate query(filename, params \\ [], opts \\ []), to: __MODULE__, as: :query_one
 
       @doc """
