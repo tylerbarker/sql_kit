@@ -5,10 +5,9 @@ defmodule SqlKit.Query do
   @doc """
   Executes SQL and returns all rows as a list of maps or structs.
   """
-  @spec all!(Ecto.Repo.t(), String.t(), list() | map(), keyword()) :: [map() | struct()]
-  def all!(repo, sql, params \\ [], opts \\ []) do
-    result = repo.query!(sql, params)
-    {columns, rows} = SqlKit.extract_result(result)
+  @spec all!(backend :: term(), String.t(), list() | map(), keyword()) :: [map() | struct()]
+  def all!(backend, sql, params \\ [], opts \\ []) do
+    {columns, rows} = execute!(backend, sql, params)
     SqlKit.transform_rows(columns, rows, opts)
   end
 
@@ -17,10 +16,10 @@ defmodule SqlKit.Query do
 
   Returns `{:ok, results}` on success, `{:error, exception}` on failure.
   """
-  @spec all(Ecto.Repo.t(), String.t(), list() | map(), keyword()) ::
+  @spec all(backend :: term(), String.t(), list() | map(), keyword()) ::
           {:ok, [map() | struct()]} | {:error, term()}
-  def all(repo, sql, params \\ [], opts \\ []) do
-    {:ok, all!(repo, sql, params, opts)}
+  def all(backend, sql, params \\ [], opts \\ []) do
+    {:ok, all!(backend, sql, params, opts)}
   rescue
     e -> {:error, e}
   end
@@ -31,11 +30,11 @@ defmodule SqlKit.Query do
   Raises `SqlKit.NoResultsError` if no rows are returned.
   Raises `SqlKit.MultipleResultsError` if more than one row is returned.
   """
-  @spec one!(Ecto.Repo.t(), String.t(), list() | map(), keyword()) :: map() | struct()
-  def one!(repo, sql, params \\ [], opts \\ []) do
+  @spec one!(backend :: term(), String.t(), list() | map(), keyword()) :: map() | struct()
+  def one!(backend, sql, params \\ [], opts \\ []) do
     query_name = Keyword.get(opts, :query_name) || truncate_sql(sql)
 
-    case all!(repo, sql, params, opts) do
+    case all!(backend, sql, params, opts) do
       [] ->
         raise SqlKit.NoResultsError, query: query_name
 
@@ -53,12 +52,12 @@ defmodule SqlKit.Query do
   Returns `{:ok, result}` on exactly one result, `{:ok, nil}` on no results,
   or `{:error, exception}` on multiple results or other errors.
   """
-  @spec one(Ecto.Repo.t(), String.t(), list() | map(), keyword()) ::
+  @spec one(backend :: term(), String.t(), list() | map(), keyword()) ::
           {:ok, map() | struct() | nil} | {:error, term()}
-  def one(repo, sql, params \\ [], opts \\ []) do
+  def one(backend, sql, params \\ [], opts \\ []) do
     query_name = Keyword.get(opts, :query_name) || truncate_sql(sql)
 
-    case all(repo, sql, params, opts) do
+    case all(backend, sql, params, opts) do
       {:ok, []} ->
         {:ok, nil}
 
@@ -71,6 +70,39 @@ defmodule SqlKit.Query do
       {:error, _} = error ->
         error
     end
+  end
+
+  # ============================================================================
+  # Backend Detection and Execution
+  # ============================================================================
+
+  # Execute query based on backend type
+  defp execute!(backend, sql, params)
+
+  # DuckDB direct connection and pool support (conditionally compiled)
+  if Code.ensure_loaded?(Duckdbex) do
+    alias SqlKit.DuckDB.Pool
+
+    defp execute!(%SqlKit.DuckDB.Connection{} = conn, sql, params) do
+      # Direct connections don't use caching (simpler, users manage their own)
+      SqlKit.DuckDB.query!(conn, sql, params)
+    end
+
+    defp execute!(%Pool{} = pool, sql, params) do
+      # Pool queries use prepared statement caching by default
+      Pool.query!(pool, sql, params)
+    end
+  end
+
+  # Fallback - assume Ecto repo
+  defp execute!(repo, sql, params) do
+    execute_ecto!(repo, sql, params)
+  end
+
+  # Execute against Ecto repo
+  defp execute_ecto!(repo, sql, params) do
+    result = repo.query!(sql, params)
+    SqlKit.extract_result(result)
   end
 
   defp truncate_sql(sql) do

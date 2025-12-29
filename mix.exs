@@ -62,6 +62,8 @@ defmodule SqlKit.MixProject do
   defp deps do
     [
       {:ecto_sql, "~> 3.0"},
+      {:nimble_pool, "~> 1.1"},
+      {:duckdbex, "~> 0.3.19", optional: true},
       {:postgrex, "~> 0.19", optional: true},
       {:myxql, "~> 0.7", optional: true},
       {:ecto_sqlite3, "~> 0.18", optional: true},
