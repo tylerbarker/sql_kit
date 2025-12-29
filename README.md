@@ -226,11 +226,44 @@ SqlKit.query!(pool, "LOAD 'parquet';", [])
 SqlKit.query_all!(pool, "SELECT * FROM 'data.parquet'", [])
 ```
 
+### Streaming Large Results
+
+For memory-efficient processing of large result sets:
+
+```elixir
+# Direct connection streaming
+conn
+|> SqlKit.DuckDB.stream!("SELECT * FROM large_table", [])
+|> Stream.flat_map(& &1)
+|> Enum.take(100)
+
+# Pool streaming (callback-based)
+SqlKit.DuckDB.Pool.with_stream!(pool, "SELECT * FROM events", [], fn stream ->
+  stream |> Stream.flat_map(& &1) |> Enum.count()
+end)
+
+# File-based SQL streaming (DuckDB backends only)
+MyApp.Analytics.SQL.with_stream!("large_query.sql", [], fn stream ->
+  stream |> Stream.flat_map(& &1) |> Enum.take(1000)
+end)
+```
+
+### Pool Options
+
+Pool operations accept these options:
+- `:timeout` - Checkout timeout in milliseconds (default: 5000)
+- `:cache` - Enable prepared statement caching (default: true)
+
+```elixir
+SqlKit.DuckDB.Pool.query!(pool, sql, params, timeout: 10_000, cache: false)
+```
+
 ### Key Differences from Ecto-Based Databases
 
 - Uses PostgreSQL-style `$1, $2, ...` parameter placeholders
 - In-memory database: use `":memory:"` string (not `:memory` atom)
 - Pool uses NimblePool (connections share one database instance)
+- Pool automatically caches prepared statements for repeated queries
 - Hugeint values are automatically converted to Elixir integers
 - Date/Time values are returned as tuples (e.g., `{2024, 1, 15}` for dates)
 

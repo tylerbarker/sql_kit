@@ -614,6 +614,366 @@ defmodule SqlKit.DuckDBTest do
     end
   end
 
+  # ============================================================================
+  # Phase 5: Prepared Statement Caching
+  # ============================================================================
+
+  describe "SqlKit.DuckDB.Pool.query!/4 with prepared statement caching" do
+    setup do
+      pool_name = :"cache_test_pool_#{:erlang.unique_integer([:positive])}"
+      {:ok, pool} = Pool.start_link(name: pool_name, database: ":memory:", pool_size: 1)
+
+      Pool.checkout!(pool, fn conn ->
+        DuckDB.query!(conn, "CREATE TABLE cache_test (id INTEGER, value VARCHAR)", [])
+        DuckDB.query!(conn, "INSERT INTO cache_test VALUES (1, 'one')", [])
+        DuckDB.query!(conn, "INSERT INTO cache_test VALUES (2, 'two')", [])
+        DuckDB.query!(conn, "INSERT INTO cache_test VALUES (3, 'three')", [])
+      end)
+
+      on_exit(fn ->
+        try do
+          if Process.alive?(pool.pid), do: Supervisor.stop(pool.pid)
+        catch
+          :exit, _ -> :ok
+        end
+      end)
+
+      %{pool: pool}
+    end
+
+    test "queries work with caching enabled (default)", %{pool: pool} do
+      # Run the same query multiple times
+      for _ <- 1..3 do
+        result = Pool.query!(pool, "SELECT * FROM cache_test WHERE id = $1", [1])
+        assert {["id", "value"], [[1, "one"]]} = result
+      end
+    end
+
+    test "repeated queries with same SQL use cached statement", %{pool: pool} do
+      sql = "SELECT * FROM cache_test WHERE id = $1"
+
+      # First query - should prepare and cache
+      result1 = Pool.query!(pool, sql, [1])
+      assert {["id", "value"], [[1, "one"]]} = result1
+
+      # Second query with different params - should use cached statement
+      result2 = Pool.query!(pool, sql, [2])
+      assert {["id", "value"], [[2, "two"]]} = result2
+
+      # Third query - still cached
+      result3 = Pool.query!(pool, sql, [3])
+      assert {["id", "value"], [[3, "three"]]} = result3
+    end
+
+    test "queries work with caching disabled", %{pool: pool} do
+      result = Pool.query!(pool, "SELECT * FROM cache_test WHERE id = $1", [1], cache: false)
+      assert {["id", "value"], [[1, "one"]]} = result
+
+      # Run again without cache
+      result2 = Pool.query!(pool, "SELECT * FROM cache_test WHERE id = $1", [2], cache: false)
+      assert {["id", "value"], [[2, "two"]]} = result2
+    end
+
+    test "Pool.query/4 returns {:ok, result}", %{pool: pool} do
+      assert {:ok, {["id", "value"], [[1, "one"]]}} =
+               Pool.query(pool, "SELECT * FROM cache_test WHERE id = $1", [1])
+    end
+
+    test "Pool.query/4 returns {:error, _} on error", %{pool: pool} do
+      assert {:error, _} = Pool.query(pool, "INVALID SQL", [])
+    end
+
+    test "SqlKit functions use cached pool queries", %{pool: pool} do
+      # This uses Pool.query! internally
+      results = SqlKit.query_all!(pool, "SELECT * FROM cache_test ORDER BY id", [])
+      assert length(results) == 3
+
+      # Run again - should use cached statement
+      results2 = SqlKit.query_all!(pool, "SELECT * FROM cache_test ORDER BY id", [])
+      assert length(results2) == 3
+    end
+  end
+
+  # ============================================================================
+  # Phase 5: Streaming
+  # ============================================================================
+
+  describe "SqlKit.DuckDB.stream!/3 (direct connection)" do
+    setup do
+      {:ok, conn} = DuckDB.connect(":memory:")
+
+      # Create table with many rows
+      DuckDB.query!(conn, "CREATE TABLE stream_test (id INTEGER, value VARCHAR)", [])
+
+      for i <- 1..100 do
+        DuckDB.query!(conn, "INSERT INTO stream_test VALUES ($1, $2)", [i, "value_#{i}"])
+      end
+
+      on_exit(fn -> DuckDB.disconnect(conn) end)
+      %{conn: conn}
+    end
+
+    test "returns a stream of result chunks", %{conn: conn} do
+      stream = DuckDB.stream!(conn, "SELECT * FROM stream_test ORDER BY id", [])
+      assert is_function(stream, 2)
+
+      # Collect all rows
+      rows =
+        stream
+        |> Stream.flat_map(& &1)
+        |> Enum.to_list()
+
+      assert length(rows) == 100
+      assert hd(rows) == [1, "value_1"]
+      assert List.last(rows) == [100, "value_100"]
+    end
+
+    test "can take limited rows from stream", %{conn: conn} do
+      rows =
+        conn
+        |> DuckDB.stream!("SELECT * FROM stream_test ORDER BY id", [])
+        |> Stream.flat_map(& &1)
+        |> Enum.take(10)
+
+      assert length(rows) == 10
+      assert hd(rows) == [1, "value_1"]
+      assert List.last(rows) == [10, "value_10"]
+    end
+
+    test "stream_with_columns! returns columns and stream", %{conn: conn} do
+      {columns, stream} = DuckDB.stream_with_columns!(conn, "SELECT * FROM stream_test ORDER BY id", [])
+
+      assert columns == ["id", "value"]
+      assert is_function(stream, 2)
+
+      rows = stream |> Stream.flat_map(& &1) |> Enum.take(5)
+      assert length(rows) == 5
+    end
+
+    test "handles empty results", %{conn: conn} do
+      rows =
+        conn
+        |> DuckDB.stream!("SELECT * FROM stream_test WHERE id < 0", [])
+        |> Stream.flat_map(& &1)
+        |> Enum.to_list()
+
+      assert rows == []
+    end
+
+    test "handles parameters in stream query", %{conn: conn} do
+      rows =
+        conn
+        |> DuckDB.stream!("SELECT * FROM stream_test WHERE id > $1 ORDER BY id", [95])
+        |> Stream.flat_map(& &1)
+        |> Enum.to_list()
+
+      assert length(rows) == 5
+      assert hd(rows) == [96, "value_96"]
+    end
+  end
+
+  describe "SqlKit.DuckDB.Pool.with_stream!/4" do
+    setup do
+      pool_name = :"stream_pool_#{:erlang.unique_integer([:positive])}"
+      {:ok, pool} = Pool.start_link(name: pool_name, database: ":memory:", pool_size: 1)
+
+      Pool.checkout!(pool, fn conn ->
+        DuckDB.query!(conn, "CREATE TABLE stream_pool_test (id INTEGER, name VARCHAR)", [])
+
+        for i <- 1..50 do
+          DuckDB.query!(conn, "INSERT INTO stream_pool_test VALUES ($1, $2)", [i, "name_#{i}"])
+        end
+      end)
+
+      on_exit(fn ->
+        try do
+          if Process.alive?(pool.pid), do: Supervisor.stop(pool.pid)
+        catch
+          :exit, _ -> :ok
+        end
+      end)
+
+      %{pool: pool}
+    end
+
+    test "streams results through callback", %{pool: pool} do
+      count =
+        Pool.with_stream!(pool, "SELECT * FROM stream_pool_test", [], fn stream ->
+          stream
+          |> Stream.flat_map(& &1)
+          |> Enum.count()
+        end)
+
+      assert count == 50
+    end
+
+    test "can process limited rows", %{pool: pool} do
+      rows =
+        Pool.with_stream!(pool, "SELECT * FROM stream_pool_test ORDER BY id", [], fn stream ->
+          stream
+          |> Stream.flat_map(& &1)
+          |> Enum.take(10)
+        end)
+
+      assert length(rows) == 10
+      assert hd(rows) == [1, "name_1"]
+    end
+
+    test "with_stream_and_columns! provides column names", %{pool: pool} do
+      {columns, first_row} =
+        Pool.with_stream_and_columns!(
+          pool,
+          "SELECT * FROM stream_pool_test ORDER BY id",
+          [],
+          fn {cols, stream} ->
+            row = stream |> Stream.flat_map(& &1) |> Enum.at(0)
+            {cols, row}
+          end
+        )
+
+      assert columns == ["id", "name"]
+      assert first_row == [1, "name_1"]
+    end
+
+    test "handles parameters", %{pool: pool} do
+      count =
+        Pool.with_stream!(pool, "SELECT * FROM stream_pool_test WHERE id > $1", [40], fn stream ->
+          stream |> Stream.flat_map(& &1) |> Enum.count()
+        end)
+
+      assert count == 10
+    end
+
+    test "connection is returned after stream processing", %{pool: pool} do
+      # Process stream
+      Pool.with_stream!(pool, "SELECT 1", [], fn stream ->
+        stream |> Stream.flat_map(& &1) |> Enum.to_list()
+      end)
+
+      # Pool should still be usable (connection returned)
+      result = Pool.query!(pool, "SELECT 42 as num", [])
+      assert {["num"], [[42]]} = result
+    end
+  end
+
+  describe "file-based SQL streaming with DuckDB" do
+    setup do
+      pool_name = DuckDBPool
+      {:ok, pool} = Pool.start_link(name: pool_name, database: ":memory:", pool_size: 2)
+
+      Pool.checkout!(pool, fn conn ->
+        DuckDB.query!(
+          conn,
+          "CREATE TABLE users (id INTEGER, name VARCHAR, email VARCHAR, age INTEGER)",
+          []
+        )
+
+        for i <- 1..20 do
+          DuckDB.query!(
+            conn,
+            "INSERT INTO users VALUES ($1, $2, $3, $4)",
+            [i, "User#{i}", "user#{i}@test.com", 20 + i]
+          )
+        end
+      end)
+
+      on_exit(fn ->
+        try do
+          if Process.alive?(pool.pid), do: Supervisor.stop(pool.pid)
+        catch
+          :exit, _ -> :ok
+        end
+      end)
+
+      %{pool: pool}
+    end
+
+    test "with_stream! works with file-based SQL", _context do
+      count =
+        DuckDBSQL.with_stream!("all_users.sql", [], fn stream ->
+          stream |> Stream.flat_map(& &1) |> Enum.count()
+        end)
+
+      assert count == 20
+    end
+
+    test "with_stream_and_columns! works with file-based SQL", _context do
+      {columns, count} =
+        DuckDBSQL.with_stream_and_columns!("all_users.sql", [], fn {cols, stream} ->
+          cnt = stream |> Stream.flat_map(& &1) |> Enum.count()
+          {cols, cnt}
+        end)
+
+      assert "id" in columns
+      assert "name" in columns
+      assert count == 20
+    end
+
+    test "with_stream! with parameters", _context do
+      rows =
+        DuckDBSQL.with_stream!("users_by_age_range.sql", [25, 30], fn stream ->
+          stream |> Stream.flat_map(& &1) |> Enum.to_list()
+        end)
+
+      # Users with age 25-30 (ages are 21-40 based on 20+i)
+      refute Enum.empty?(rows)
+    end
+  end
+
+  # ============================================================================
+  # Phase 5: Pool Tuning Options
+  # ============================================================================
+
+  describe "pool timeout options" do
+    test "checkout! accepts timeout option" do
+      pool_name = :"timeout_pool_#{:erlang.unique_integer([:positive])}"
+      {:ok, pool} = Pool.start_link(name: pool_name, database: ":memory:", pool_size: 1)
+
+      # Should work with explicit timeout
+      result =
+        Pool.checkout!(
+          pool,
+          fn conn ->
+            DuckDB.query!(conn, "SELECT 1 as num", [])
+          end,
+          timeout: 10_000
+        )
+
+      assert {["num"], [[1]]} = result
+      Supervisor.stop(pool.pid)
+    end
+
+    test "query! accepts timeout option" do
+      pool_name = :"timeout_pool_#{:erlang.unique_integer([:positive])}"
+      {:ok, pool} = Pool.start_link(name: pool_name, database: ":memory:", pool_size: 1)
+
+      result = Pool.query!(pool, "SELECT 42 as num", [], timeout: 10_000)
+      assert {["num"], [[42]]} = result
+
+      Supervisor.stop(pool.pid)
+    end
+
+    test "with_stream! accepts timeout option" do
+      pool_name = :"timeout_pool_#{:erlang.unique_integer([:positive])}"
+      {:ok, pool} = Pool.start_link(name: pool_name, database: ":memory:", pool_size: 1)
+
+      result =
+        Pool.with_stream!(
+          pool,
+          "SELECT 1 as num",
+          [],
+          fn stream ->
+            stream |> Stream.flat_map(& &1) |> Enum.to_list()
+          end,
+          timeout: 10_000
+        )
+
+      assert result == [[1]]
+
+      Supervisor.stop(pool.pid)
+    end
+  end
+
   describe "file-based SQL with persistent database" do
     setup do
       path = Path.join(System.tmp_dir!(), "sqlkit_filebased_#{:erlang.unique_integer([:positive])}.duckdb")

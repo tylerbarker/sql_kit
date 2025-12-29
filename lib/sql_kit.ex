@@ -560,6 +560,67 @@ defmodule SqlKit do
       """
       @spec query!(String.t(), list() | map(), keyword()) :: map() | struct()
       defdelegate query!(filename, params \\ [], opts \\ []), to: __MODULE__, as: :query_one!
+
+      # DuckDB-specific streaming functions
+      # Only defined when backend is :duckdb
+      if @backend_type == :duckdb do
+        @doc """
+        Executes a SQL query and streams results through a callback function.
+
+        Only available for DuckDB backends. The connection is held for the
+        duration of the callback, which receives a stream of result chunks.
+
+        ## Examples
+
+            # Count rows without loading all into memory
+            MyApp.Analytics.SQL.with_stream!("large_query.sql", [], fn stream ->
+              stream
+              |> Stream.flat_map(& &1)
+              |> Enum.reduce(0, fn _row, count -> count + 1 end)
+            end)
+
+            # Process first 100 rows
+            MyApp.Analytics.SQL.with_stream!("events.sql", [~D[2024-01-01]], fn stream ->
+              stream
+              |> Stream.flat_map(& &1)
+              |> Enum.take(100)
+            end)
+
+        """
+        @spec with_stream!(String.t(), list(), (Enumerable.t() -> result)) :: result
+              when result: term()
+        def with_stream!(filename, params \\ [], fun) do
+          sql = load!(filename)
+          pool = get_backend()
+          SqlKit.DuckDB.Pool.with_stream!(pool, sql, params, fun)
+        end
+
+        @doc """
+        Like `with_stream!/3` but also provides column names to the callback.
+
+        The callback receives `{columns, stream}` where `columns` is a list of
+        column names and `stream` is the chunk stream.
+
+        ## Examples
+
+            MyApp.Analytics.SQL.with_stream_and_columns!("users.sql", [], fn {cols, stream} ->
+              IO.inspect(cols)  # => ["id", "name", "age"]
+              stream |> Stream.flat_map(& &1) |> Enum.to_list()
+            end)
+
+        """
+        @spec with_stream_and_columns!(
+                String.t(),
+                list(),
+                ({[String.t()], Enumerable.t()} -> result)
+              ) :: result
+              when result: term()
+        def with_stream_and_columns!(filename, params \\ [], fun) do
+          sql = load!(filename)
+          pool = get_backend()
+          SqlKit.DuckDB.Pool.with_stream_and_columns!(pool, sql, params, fun)
+        end
+      end
     end
   end
 

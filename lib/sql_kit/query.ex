@@ -84,13 +84,13 @@ defmodule SqlKit.Query do
     alias SqlKit.DuckDB.Pool
 
     defp execute!(%SqlKit.DuckDB.Connection{} = conn, sql, params) do
+      # Direct connections don't use caching (simpler, users manage their own)
       SqlKit.DuckDB.query!(conn, sql, params)
     end
 
     defp execute!(%Pool{} = pool, sql, params) do
-      Pool.checkout!(pool, fn conn ->
-        SqlKit.DuckDB.query!(conn, sql, params)
-      end)
+      # Pool queries use prepared statement caching by default
+      Pool.query!(pool, sql, params)
     end
   end
 

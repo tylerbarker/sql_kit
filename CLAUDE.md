@@ -171,6 +171,49 @@ Key differences from Ecto-based databases:
 - Extensions loaded via SQL: `INSTALL 'parquet'; LOAD 'parquet';`
 - File-based SQL uses `:backend` option instead of `:repo`
 
+### DuckDB Pool Features
+
+**Prepared Statement Caching**: Pool queries automatically cache prepared statements per connection. Repeated queries with the same SQL skip the prepare step.
+
+```elixir
+# Caching is enabled by default
+SqlKit.query_all!(pool, "SELECT * FROM events WHERE id = $1", [1])
+SqlKit.query_all!(pool, "SELECT * FROM events WHERE id = $1", [2])  # uses cached statement
+
+# Disable caching for specific queries
+SqlKit.DuckDB.Pool.query!(pool, sql, params, cache: false)
+```
+
+**Streaming Large Results**: For memory-efficient processing of large result sets:
+
+```elixir
+# Direct connection streaming
+conn
+|> SqlKit.DuckDB.stream!("SELECT * FROM large_table", [])
+|> Stream.flat_map(& &1)
+|> Enum.take(100)
+
+# With column names
+{columns, stream} = SqlKit.DuckDB.stream_with_columns!(conn, sql, [])
+
+# Pool streaming (callback-based to manage connection lifecycle)
+SqlKit.DuckDB.Pool.with_stream!(pool, "SELECT * FROM events", [], fn stream ->
+  stream |> Stream.flat_map(& &1) |> Enum.count()
+end)
+
+# File-based SQL streaming (DuckDB backends only)
+MyApp.Analytics.SQL.with_stream!("large_query.sql", [], fn stream ->
+  stream |> Stream.flat_map(& &1) |> Enum.take(1000)
+end)
+```
+
+**Pool Timeout**: All pool operations accept a `:timeout` option (default: 5000ms):
+
+```elixir
+SqlKit.DuckDB.Pool.query!(pool, sql, params, timeout: 10_000)
+SqlKit.DuckDB.Pool.checkout!(pool, fn conn -> ... end, timeout: 10_000)
+```
+
 ## Configuration
 
 Users configure in their app's config:
