@@ -4,6 +4,7 @@ defmodule SqlKit.DuckDBTest do
   alias SqlKit.DuckDB
   alias SqlKit.DuckDB.Connection
   alias SqlKit.DuckDB.Pool
+  alias SqlKit.Test.DuckDBPool
   alias SqlKit.Test.DuckDBSQL
   alias SqlKit.Test.User
 
@@ -500,7 +501,7 @@ defmodule SqlKit.DuckDBTest do
     # which uses `backend: {:duckdb, pool: SqlKit.Test.DuckDBPool}`
 
     setup do
-      pool_name = SqlKit.Test.DuckDBPool
+      pool_name = DuckDBPool
       {:ok, pool} = Pool.start_link(name: pool_name, database: ":memory:", pool_size: 2)
 
       # Set up test data matching the other database tests
@@ -626,7 +627,7 @@ defmodule SqlKit.DuckDBTest do
     end
 
     test "queries work with file-based pool and data persists across restarts", %{db_path: path} do
-      pool_name = SqlKit.Test.DuckDBPool
+      pool_name = DuckDBPool
 
       # Start pool with file-based database
       {:ok, pool} = Pool.start_link(name: pool_name, database: path, pool_size: 2)

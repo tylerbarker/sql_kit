@@ -24,7 +24,7 @@ For file-based SQL, keeping queries in `.sql` files brings other practical benef
 - **Two APIs**: Execute SQL strings directly or load from files
 - **Compile-time embedding**: File-based SQL read once at compile time and stored as module attributes
 - **Dynamic loading in dev/test**: Edit SQL files without recompiling
-- **Multi-database support**: Works with PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, and ClickHouse
+- **Multi-database support**: Works with PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, ClickHouse, and DuckDB
 
 ## Supported Databases
 
@@ -36,6 +36,7 @@ For file-based SQL, keeping queries in `.sql` files brings other practical benef
 | MariaDB    | Ecto.Adapters.MyXQL       | MyXQL    |
 | SQL Server | Ecto.Adapters.Tds         | Tds      |
 | ClickHouse | Ecto.Adapters.ClickHouse  | Ch       |
+| DuckDB     | N/A (direct driver)       | Duckdbex |
 
 ## Installation
 
@@ -45,6 +46,17 @@ Add `sql_kit` to your dependencies in `mix.exs`:
 def deps do
   [
     {:sql_kit, "~> 0.1.0"}
+  ]
+end
+```
+
+For DuckDB support, also add `duckdbex`:
+
+```elixir
+def deps do
+  [
+    {:sql_kit, "~> 0.1.0"},
+    {:duckdbex, "~> 0.3"}
   ]
 end
 ```
@@ -128,6 +140,100 @@ MyApp.Reports.SQL.load!("stats.sql")
 # => "SELECT id, name, total_sales..."
 ```
 
+## DuckDB
+
+DuckDB is a high-performance analytical database. Unlike other supported databases, DuckDB is not an Ecto adapter—SqlKit provides direct integration via the `duckdbex` driver.
+
+### Direct Connection
+
+For scripts, one-off analysis, or simple use cases:
+
+```elixir
+# In-memory database
+{:ok, conn} = SqlKit.DuckDB.connect(":memory:")
+SqlKit.query_all!(conn, "SELECT 1 as num", [])
+# => [%{num: 1}]
+SqlKit.DuckDB.disconnect(conn)
+
+# File-based database
+{:ok, conn} = SqlKit.DuckDB.connect("analytics.duckdb")
+SqlKit.query_all!(conn, "SELECT * FROM events", [])
+SqlKit.DuckDB.disconnect(conn)
+
+# With custom configuration
+{:ok, conn} = SqlKit.DuckDB.connect("analytics.duckdb",
+  config: %Duckdbex.Config{threads: 4})
+```
+
+### Pooled Connection (Recommended for Production)
+
+For production use, add the pool to your supervision tree:
+
+```elixir
+# In your application.ex
+def start(_type, _args) do
+  children = [
+    # ... other children
+    {SqlKit.DuckDB.Pool,
+      name: MyApp.AnalyticsPool,
+      database: "priv/analytics.duckdb",
+      pool_size: 4}
+  ]
+
+  Supervisor.start_link(children, strategy: :one_for_one)
+end
+```
+
+Pool options:
+- `:name` - Required. The name to register the pool under
+- `:database` - Required. Path to database file or `":memory:"`
+- `:pool_size` - Number of connections. Default: 4
+- `:config` - Optional `Duckdbex.Config` struct for advanced configuration (threads, memory limits, etc.)
+
+Then query using the pool:
+
+```elixir
+pool = SqlKit.DuckDB.Pool.pool(MyApp.AnalyticsPool)
+SqlKit.query_all!(pool, "SELECT * FROM events WHERE date > $1", [~D[2024-01-01]])
+# => [%{id: 1, date: ~D[2024-01-15], ...}, ...]
+```
+
+### File-Based SQL with DuckDB
+
+Use the `:backend` option instead of `:repo`:
+
+```elixir
+defmodule MyApp.Analytics.SQL do
+  use SqlKit,
+    otp_app: :my_app,
+    backend: {:duckdb, pool: MyApp.AnalyticsPool},
+    dirname: "analytics",
+    files: ["daily_summary.sql", "user_activity.sql"]
+end
+
+# Usage
+MyApp.Analytics.SQL.query_all!("daily_summary.sql", [~D[2024-01-01]])
+```
+
+### Loading Extensions
+
+DuckDB extensions (Parquet, JSON, HTTPFS, etc.) are loaded via SQL:
+
+```elixir
+pool = SqlKit.DuckDB.Pool.pool(MyApp.AnalyticsPool)
+SqlKit.query!(pool, "INSTALL 'parquet';", [])
+SqlKit.query!(pool, "LOAD 'parquet';", [])
+SqlKit.query_all!(pool, "SELECT * FROM 'data.parquet'", [])
+```
+
+### Key Differences from Ecto-Based Databases
+
+- Uses PostgreSQL-style `$1, $2, ...` parameter placeholders
+- In-memory database: use `":memory:"` string (not `:memory` atom)
+- Pool uses NimblePool (connections share one database instance)
+- Hugeint values are automatically converted to Elixir integers
+- Date/Time values are returned as tuples (e.g., `{2024, 1, 15}` for dates)
+
 ## Configuration
 
 ```elixir
@@ -155,6 +261,7 @@ Each database uses different parameter placeholder syntax:
 | SQLite     | `?`               | `WHERE id = ? AND age > ?`                 |
 | SQL Server | `@1`, `@2`, ...   | `WHERE id = @1 AND age > @2`               |
 | ClickHouse | `{name:Type}`     | `WHERE id = {id:UInt32} AND age > {age:UInt32}` |
+| DuckDB     | `$1`, `$2`, ...   | `WHERE id = $1 AND age > $2`               |
 
 ### ClickHouse Named Parameters
 
@@ -207,9 +314,12 @@ This pattern gives you named parameters through Elixir function arguments while 
 ## Use SqlKit Options
 
 - `:otp_app` (required) - Your application name
-- `:repo` (required) - The Ecto repo module to use for queries
+- `:repo` - The Ecto repo module to use for queries (required unless `:backend` is specified)
+- `:backend` - Alternative to `:repo` for non-Ecto databases. Supports `{:duckdb, pool: PoolName}`
 - `:dirname` (required) - Subdirectory within root_sql_dir for this module's SQL files
 - `:files` (required) - List of SQL filenames to load
+
+Note: You must specify either `:repo` or `:backend`, but not both.
 
 ## API Reference
 
@@ -413,7 +523,7 @@ SQL.load("users.sql")
    mix test
    ```
 
-The test suite runs against all supported databases (PostgreSQL, MySQL, SQLite, SQL Server, and ClickHouse). All databases must be running for the full test suite to pass.
+The test suite runs against all supported databases (PostgreSQL, MySQL, SQLite, SQL Server, ClickHouse, and DuckDB). All databases must be running for the full test suite to pass.
 
 ### Database Ports
 
@@ -422,7 +532,7 @@ The test suite runs against all supported databases (PostgreSQL, MySQL, SQLite, 
 - SQL Server: 1433
 - ClickHouse: 8123, 9000
 
-SQLite uses a local file and doesn't require Docker.
+SQLite and DuckDB use local files/memory and don't require Docker.
 
 ### Before Pull Request
 
