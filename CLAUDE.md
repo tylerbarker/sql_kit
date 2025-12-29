@@ -54,18 +54,20 @@ test/
 
 ```elixir
 # Execute SQL strings directly with any Ecto repo
-SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
+SqlKit.query_all(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
 # => [%{id: 1, name: "Alice", age: 30}, ...]
 
 SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
 # => %{id: 1, name: "Alice"}
 
-SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users", [], as: User)
+SqlKit.query_all(MyApp.Repo, "SELECT * FROM users", [], as: User)
 # => [%User{id: 1, name: "Alice"}, ...]
 
-# Non-bang variants
-SqlKit.query_all(repo, sql, params, opts)  # => {:ok, results} | {:error, reason}
-SqlKit.query_one(repo, sql, params, opts)  # => {:ok, result | nil} | {:error, reason}
+# query_all returns list directly, raises on errors (matches Ecto.Repo.all/2)
+SqlKit.query_all(repo, sql, params, opts)  # => [results]
+
+# query_one returns result or nil, raises on errors/multiple (matches Ecto.Repo.one/2)
+SqlKit.query_one(repo, sql, params, opts)  # => result | nil
 
 # Aliases for query_one
 SqlKit.query!(repo, sql, params, opts)
@@ -95,14 +97,12 @@ end
 
 # Usage (same API for both)
 MyApp.Reports.SQL.query!("stats.sql", [id])                # single row (alias for query_one!)
-MyApp.Reports.SQL.query_one!("stats.sql", [id])            # single row
-MyApp.Reports.SQL.query_all!("activity.sql", [id], as: Activity)  # all rows as structs
+MyApp.Reports.SQL.query_one!("stats.sql", [id])            # single row (raises if no results)
+MyApp.Reports.SQL.query_one("stats.sql", [id])             # single row or nil
+MyApp.Reports.SQL.query_all("activity.sql", [id], as: Activity)  # all rows as structs
 MyApp.Reports.SQL.load!("stats.sql")                       # just get SQL string
 
-# Non-bang variants return {:ok, result} | {:error, reason}
-MyApp.Reports.SQL.query("stats.sql", [id])
-MyApp.Reports.SQL.query_one("stats.sql", [id])
-MyApp.Reports.SQL.query_all("activity.sql", [id])
+# Non-bang load returns {:ok, result} | {:error, reason}
 MyApp.Reports.SQL.load("stats.sql")
 ```
 
@@ -136,7 +136,7 @@ DuckDB is unique - it's not an Ecto adapter but a direct NIF driver. SqlKit prov
 ```elixir
 # Direct connection (BYO)
 {:ok, conn} = SqlKit.DuckDB.connect(":memory:")
-SqlKit.query_all!(conn, "SELECT * FROM users", [])
+SqlKit.query_all(conn, "SELECT * FROM users", [])
 SqlKit.DuckDB.disconnect(conn)
 
 # Pooled connection (recommended for production)
@@ -149,7 +149,7 @@ SqlKit.DuckDB.disconnect(conn)
 
 # Then use the pool:
 {:ok, pool} = SqlKit.DuckDB.Pool.start_link(name: MyPool, database: ":memory:")
-SqlKit.query_all!(pool, "SELECT * FROM events", [])
+SqlKit.query_all(pool, "SELECT * FROM events", [])
 
 # File-based SQL with DuckDB (use :backend instead of :repo)
 defmodule MyApp.Analytics.SQL do
@@ -160,7 +160,7 @@ defmodule MyApp.Analytics.SQL do
     files: ["daily_summary.sql"]
 end
 
-MyApp.Analytics.SQL.query_all!("daily_summary.sql", [~D[2024-01-01]])
+MyApp.Analytics.SQL.query_all("daily_summary.sql", [~D[2024-01-01]])
 ```
 
 Key differences from Ecto-based databases:
@@ -177,8 +177,8 @@ Key differences from Ecto-based databases:
 
 ```elixir
 # Caching is enabled by default
-SqlKit.query_all!(pool, "SELECT * FROM events WHERE id = $1", [1])
-SqlKit.query_all!(pool, "SELECT * FROM events WHERE id = $1", [2])  # uses cached statement
+SqlKit.query_all(pool, "SELECT * FROM events WHERE id = $1", [1])
+SqlKit.query_all(pool, "SELECT * FROM events WHERE id = $1", [2])  # uses cached statement
 
 # Disable caching for specific queries
 SqlKit.DuckDB.Pool.query!(pool, sql, params, cache: false)

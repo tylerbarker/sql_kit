@@ -128,16 +128,16 @@ defmodule SqlKit.DuckDBTest do
       %{conn: conn}
     end
 
-    test "query_all! returns list of maps", %{conn: conn} do
-      results = SqlKit.query_all!(conn, "SELECT * FROM users ORDER BY id", [])
+    test "query_all returns list of maps", %{conn: conn} do
+      results = SqlKit.query_all(conn, "SELECT * FROM users ORDER BY id", [])
 
       assert length(results) == 3
       assert hd(results).id == 1
       assert hd(results).name == "Alice"
     end
 
-    test "query_all! with parameters", %{conn: conn} do
-      results = SqlKit.query_all!(conn, "SELECT * FROM users WHERE age > $1", [26])
+    test "query_all with parameters", %{conn: conn} do
+      results = SqlKit.query_all(conn, "SELECT * FROM users WHERE age > $1", [26])
 
       assert length(results) == 2
       names = Enum.map(results, & &1.name)
@@ -145,20 +145,11 @@ defmodule SqlKit.DuckDBTest do
       assert "Charlie" in names
     end
 
-    test "query_all! with :as option", %{conn: conn} do
-      results = SqlKit.query_all!(conn, "SELECT id, name, age FROM users ORDER BY id", [], as: User)
+    test "query_all with :as option", %{conn: conn} do
+      results = SqlKit.query_all(conn, "SELECT id, name, age FROM users ORDER BY id", [], as: User)
 
       assert length(results) == 3
       assert %User{id: 1, name: "Alice", age: 30} = hd(results)
-    end
-
-    test "query_all returns {:ok, results}", %{conn: conn} do
-      assert {:ok, results} = SqlKit.query_all(conn, "SELECT * FROM users ORDER BY id", [])
-      assert length(results) == 3
-    end
-
-    test "query_all returns {:error, _} on error", %{conn: conn} do
-      assert {:error, _} = SqlKit.query_all(conn, "SELECT * FROM nonexistent", [])
     end
 
     test "query_one! returns single map", %{conn: conn} do
@@ -180,13 +171,19 @@ defmodule SqlKit.DuckDBTest do
       end
     end
 
-    test "query_one returns {:ok, result}", %{conn: conn} do
-      assert {:ok, result} = SqlKit.query_one(conn, "SELECT * FROM users WHERE id = $1", [1])
+    test "query_one returns result", %{conn: conn} do
+      result = SqlKit.query_one(conn, "SELECT * FROM users WHERE id = $1", [1])
       assert result.name == "Alice"
     end
 
-    test "query_one returns {:ok, nil} when no results", %{conn: conn} do
-      assert {:ok, nil} = SqlKit.query_one(conn, "SELECT * FROM users WHERE id = $1", [999])
+    test "query_one returns nil when no results", %{conn: conn} do
+      assert SqlKit.query_one(conn, "SELECT * FROM users WHERE id = $1", [999]) == nil
+    end
+
+    test "query_one raises on multiple results", %{conn: conn} do
+      assert_raise SqlKit.MultipleResultsError, fn ->
+        SqlKit.query_one(conn, "SELECT * FROM users", [])
+      end
     end
 
     test "query!/4 is alias for query_one!/4", %{conn: conn} do
@@ -195,7 +192,7 @@ defmodule SqlKit.DuckDBTest do
     end
 
     test "query/4 is alias for query_one/4", %{conn: conn} do
-      assert {:ok, result} = SqlKit.query(conn, "SELECT * FROM users WHERE id = $1", [1])
+      result = SqlKit.query(conn, "SELECT * FROM users WHERE id = $1", [1])
       assert result.name == "Alice"
     end
   end
@@ -288,21 +285,21 @@ defmodule SqlKit.DuckDBTest do
       %{pool: pool}
     end
 
-    test "query_all! with pool", %{pool: pool} do
-      results = SqlKit.query_all!(pool, "SELECT * FROM users ORDER BY id", [])
+    test "query_all with pool", %{pool: pool} do
+      results = SqlKit.query_all(pool, "SELECT * FROM users ORDER BY id", [])
 
       assert length(results) == 3
       assert hd(results).name == "Alice"
     end
 
-    test "query_all! with pool and parameters", %{pool: pool} do
-      results = SqlKit.query_all!(pool, "SELECT * FROM users WHERE age > $1", [26])
+    test "query_all with pool and parameters", %{pool: pool} do
+      results = SqlKit.query_all(pool, "SELECT * FROM users WHERE age > $1", [26])
 
       assert length(results) == 2
     end
 
-    test "query_all! with pool and :as option", %{pool: pool} do
-      results = SqlKit.query_all!(pool, "SELECT id, name, age FROM users ORDER BY id", [], as: User)
+    test "query_all with pool and :as option", %{pool: pool} do
+      results = SqlKit.query_all(pool, "SELECT id, name, age FROM users ORDER BY id", [], as: User)
 
       assert length(results) == 3
       assert %User{id: 1, name: "Alice", age: 30} = hd(results)
@@ -326,18 +323,19 @@ defmodule SqlKit.DuckDBTest do
       end
     end
 
-    test "query_all with pool returns {:ok, results}", %{pool: pool} do
-      assert {:ok, results} = SqlKit.query_all(pool, "SELECT * FROM users ORDER BY id", [])
-      assert length(results) == 3
-    end
-
-    test "query_one with pool returns {:ok, result}", %{pool: pool} do
-      assert {:ok, result} = SqlKit.query_one(pool, "SELECT * FROM users WHERE id = $1", [1])
+    test "query_one with pool returns result", %{pool: pool} do
+      result = SqlKit.query_one(pool, "SELECT * FROM users WHERE id = $1", [1])
       assert result.name == "Alice"
     end
 
-    test "query_one with pool returns {:ok, nil} when no results", %{pool: pool} do
-      assert {:ok, nil} = SqlKit.query_one(pool, "SELECT * FROM users WHERE id = $1", [999])
+    test "query_one with pool returns nil when no results", %{pool: pool} do
+      assert SqlKit.query_one(pool, "SELECT * FROM users WHERE id = $1", [999]) == nil
+    end
+
+    test "query_one with pool raises on multiple results", %{pool: pool} do
+      assert_raise SqlKit.MultipleResultsError, fn ->
+        SqlKit.query_one(pool, "SELECT * FROM users", [])
+      end
     end
   end
 
@@ -410,7 +408,7 @@ defmodule SqlKit.DuckDBTest do
 
       # Second connection: verify data persisted
       {:ok, conn2} = DuckDB.connect(path)
-      results = SqlKit.query_all!(conn2, "SELECT * FROM persistence_test ORDER BY id", [])
+      results = SqlKit.query_all(conn2, "SELECT * FROM persistence_test ORDER BY id", [])
 
       assert length(results) == 2
       assert Enum.at(results, 0).id == 1
@@ -433,7 +431,7 @@ defmodule SqlKit.DuckDBTest do
       end)
 
       # Query via SqlKit API
-      results = SqlKit.query_all!(pool, "SELECT * FROM pool_file_test ORDER BY id", [])
+      results = SqlKit.query_all(pool, "SELECT * FROM pool_file_test ORDER BY id", [])
 
       assert length(results) == 2
       assert hd(results).name == "Alice"
@@ -474,7 +472,7 @@ defmodule SqlKit.DuckDBTest do
         DuckDB.query!(conn, "INSERT INTO restart_test VALUES (2, 'new_data')", [])
       end)
 
-      results = SqlKit.query_all!(pool2, "SELECT * FROM restart_test ORDER BY id", [])
+      results = SqlKit.query_all(pool2, "SELECT * FROM restart_test ORDER BY id", [])
       assert length(results) == 2
 
       Supervisor.stop(pool2.pid)
@@ -534,32 +532,27 @@ defmodule SqlKit.DuckDBTest do
       assert sql =~ "SELECT"
     end
 
-    test "query_all! returns all rows", _context do
-      results = DuckDBSQL.query_all!("all_users.sql")
+    test "query_all returns all rows", _context do
+      results = DuckDBSQL.query_all("all_users.sql")
 
       assert length(results) == 3
       assert hd(results).name == "Alice"
     end
 
-    test "query_all! with :as option", _context do
-      results = DuckDBSQL.query_all!("all_users.sql", [], as: User)
+    test "query_all with :as option", _context do
+      results = DuckDBSQL.query_all("all_users.sql", [], as: User)
 
       assert length(results) == 3
       assert %User{id: 1, name: "Alice", email: "alice@test.com", age: 30} = hd(results)
     end
 
-    test "query_all! with parameters", _context do
-      results = DuckDBSQL.query_all!("users_by_age_range.sql", [26, 40])
+    test "query_all with parameters", _context do
+      results = DuckDBSQL.query_all("users_by_age_range.sql", [26, 40])
 
       assert length(results) == 2
       names = Enum.map(results, & &1.name)
       assert "Alice" in names
       assert "Charlie" in names
-    end
-
-    test "query_all returns {:ok, results}", _context do
-      assert {:ok, results} = DuckDBSQL.query_all("all_users.sql")
-      assert length(results) == 3
     end
 
     test "query_one! returns single row", _context do
@@ -594,13 +587,19 @@ defmodule SqlKit.DuckDBTest do
       end
     end
 
-    test "query_one returns {:ok, result}", _context do
-      assert {:ok, result} = DuckDBSQL.query_one("first_user.sql")
+    test "query_one returns result", _context do
+      result = DuckDBSQL.query_one("first_user.sql")
       assert result.name == "Alice"
     end
 
-    test "query_one returns {:ok, nil} for no results", _context do
-      assert {:ok, nil} = DuckDBSQL.query_one("no_users.sql")
+    test "query_one returns nil for no results", _context do
+      assert DuckDBSQL.query_one("no_users.sql") == nil
+    end
+
+    test "query_one raises on multiple results", _context do
+      assert_raise SqlKit.MultipleResultsError, fn ->
+        DuckDBSQL.query_one("all_users.sql")
+      end
     end
 
     test "query!/3 is alias for query_one!/3", _context do
@@ -609,7 +608,7 @@ defmodule SqlKit.DuckDBTest do
     end
 
     test "query/3 is alias for query_one/3", _context do
-      assert {:ok, result} = DuckDBSQL.query("user_by_id.sql", [1])
+      result = DuckDBSQL.query("user_by_id.sql", [1])
       assert result.name == "Alice"
     end
   end
@@ -685,11 +684,11 @@ defmodule SqlKit.DuckDBTest do
 
     test "SqlKit functions use cached pool queries", %{pool: pool} do
       # This uses Pool.query! internally
-      results = SqlKit.query_all!(pool, "SELECT * FROM cache_test ORDER BY id", [])
+      results = SqlKit.query_all(pool, "SELECT * FROM cache_test ORDER BY id", [])
       assert length(results) == 3
 
       # Run again - should use cached statement
-      results2 = SqlKit.query_all!(pool, "SELECT * FROM cache_test ORDER BY id", [])
+      results2 = SqlKit.query_all(pool, "SELECT * FROM cache_test ORDER BY id", [])
       assert length(results2) == 3
     end
   end
@@ -1001,7 +1000,7 @@ defmodule SqlKit.DuckDBTest do
       end)
 
       # Query using file-based SQL module
-      results = DuckDBSQL.query_all!("all_users.sql")
+      results = DuckDBSQL.query_all("all_users.sql")
       assert length(results) == 3
       assert hd(results).name == "Alice"
 
@@ -1017,7 +1016,7 @@ defmodule SqlKit.DuckDBTest do
       {:ok, pool2} = Pool.start_link(name: pool_name, database: path, pool_size: 2)
 
       # Data should still be there - query using file-based SQL module
-      results2 = DuckDBSQL.query_all!("all_users.sql")
+      results2 = DuckDBSQL.query_all("all_users.sql")
       assert length(results2) == 3
 
       # Verify specific queries still work
@@ -1025,7 +1024,7 @@ defmodule SqlKit.DuckDBTest do
       assert result2.name == "Charlie"
 
       # Test with :as option after restart
-      users = DuckDBSQL.query_all!("all_users.sql", [], as: User)
+      users = DuckDBSQL.query_all("all_users.sql", [], as: User)
       assert length(users) == 3
       assert %User{id: 1, name: "Alice"} = hd(users)
 

@@ -10,7 +10,7 @@ if Code.ensure_loaded?(Duckdbex) do
     For simple use cases, scripts, or explicit control:
 
         {:ok, conn} = SqlKit.DuckDB.connect(":memory:")
-        SqlKit.query_all!(conn, "SELECT 1 as num", [])
+        SqlKit.query_all(conn, "SELECT 1 as num", [])
         # => [%{num: 1}]
         SqlKit.DuckDB.disconnect(conn)
 
@@ -26,7 +26,7 @@ if Code.ensure_loaded?(Duckdbex) do
         ]
 
         # Then use the pool name with SqlKit functions
-        SqlKit.query_all!(MyApp.AnalyticsPool, "SELECT * FROM events", [])
+        SqlKit.query_all(MyApp.AnalyticsPool, "SELECT * FROM events", [])
 
     ## Loading Extensions
 
@@ -34,7 +34,7 @@ if Code.ensure_loaded?(Duckdbex) do
 
         SqlKit.query!(conn, "INSTALL 'parquet';", [])
         SqlKit.query!(conn, "LOAD 'parquet';", [])
-        SqlKit.query_all!(conn, "SELECT * FROM 'data.parquet'", [])
+        SqlKit.query_all(conn, "SELECT * FROM 'data.parquet'", [])
 
     ## Notes
 
@@ -128,7 +128,7 @@ if Code.ensure_loaded?(Duckdbex) do
     Executes a SQL query and returns columns and rows.
 
     This is a low-level function. Users should typically use
-    `SqlKit.query_all!/3`, `SqlKit.query_one!/3`, etc. instead.
+    `SqlKit.query_all/3`, `SqlKit.query_one!/3`, etc. instead.
 
     ## Examples
 
@@ -151,6 +151,7 @@ if Code.ensure_loaded?(Duckdbex) do
 
     See `query/3` for details.
     """
+    # sobelow_skip ["SQL.Query"]
     @spec query!(Connection.t(), String.t(), list()) :: {[String.t()], [[term()]]}
     def query!(%Connection{} = conn, sql, params) do
       case query(conn, sql, params) do

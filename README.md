@@ -45,7 +45,7 @@ Add `sql_kit` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:sql_kit, "~> 0.1.0"}
+    {:sql_kit, "~> 0.2.0"}
   ]
 end
 ```
@@ -55,7 +55,7 @@ For DuckDB support, also add `duckdbex`:
 ```elixir
 def deps do
   [
-    {:sql_kit, "~> 0.1.0"},
+    {:sql_kit, "~> 0.2.0"},
     {:duckdbex, "~> 0.3"}
   ]
 end
@@ -69,23 +69,26 @@ Execute SQL strings directly with any Ecto repo:
 
 ```elixir
 # Get all rows as a list of maps
-SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
+SqlKit.query_all(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21])
 # => [%{id: 1, name: "Alice", age: 30}, %{id: 2, name: "Bob", age: 25}]
 
-# Get a single row
+# Get a single row (raises if no results)
 SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
 # => %{id: 1, name: "Alice", age: 30}
 
+# Get a single row or nil (raises on multiple results)
+SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
+# => %{id: 1, name: "Alice", age: 30}
+
+SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [999])
+# => nil
+
 # Cast results to structs
-SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users", [], as: User)
+SqlKit.query_all(MyApp.Repo, "SELECT * FROM users", [], as: User)
 # => [%User{id: 1, name: "Alice", age: 30}, ...]
 
-# Non-bang variants return {:ok, result} or {:error, reason}
-SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
-# => {:ok, %{id: 1, name: "Alice"}}
-
 # ClickHouse uses named parameters as a map
-SqlKit.query_all!(ClickHouseRepo, "SELECT * FROM users WHERE age > {age:UInt32}", %{age: 21})
+SqlKit.query_all(ClickHouseRepo, "SELECT * FROM users WHERE age > {age:UInt32}", %{age: 21})
 # => [%{id: 1, name: "Alice", age: 30}, ...]
 ```
 
@@ -119,16 +122,20 @@ end
 #### 3. Execute queries
 
 ```elixir
-# Get a single row as a map
+# Get a single row as a map (raises if no results)
 MyApp.Reports.SQL.query_one!("stats.sql", [user_id])
 # => %{id: 1, name: "Alice", total_sales: 1000}
 
-# You can also use query!/3, which is an alias for query_one!/3
+# Get a single row or nil (raises on multiple results)
+MyApp.Reports.SQL.query_one("stats.sql", [user_id])
+# => %{id: 1, name: "Alice", total_sales: 1000}
+
+# You can also use query!/3 and query/3, which are aliases for query_one!/3 and query_one/3
 MyApp.Reports.SQL.query!("stats.sql", [user_id])
 # => %{id: 1, name: "Alice", total_sales: 1000}
 
 # Get all rows
-MyApp.Reports.SQL.query_all!("activity.sql", [company_id])
+MyApp.Reports.SQL.query_all("activity.sql", [company_id])
 # => [%{id: 1, ...}, %{id: 2, ...}]
 
 # Cast results to structs
@@ -151,13 +158,13 @@ For scripts, one-off analysis, or simple use cases:
 ```elixir
 # In-memory database
 {:ok, conn} = SqlKit.DuckDB.connect(":memory:")
-SqlKit.query_all!(conn, "SELECT 1 as num", [])
+SqlKit.query_all(conn, "SELECT 1 as num", [])
 # => [%{num: 1}]
 SqlKit.DuckDB.disconnect(conn)
 
 # File-based database
 {:ok, conn} = SqlKit.DuckDB.connect("analytics.duckdb")
-SqlKit.query_all!(conn, "SELECT * FROM events", [])
+SqlKit.query_all(conn, "SELECT * FROM events", [])
 SqlKit.DuckDB.disconnect(conn)
 
 # With custom configuration
@@ -194,7 +201,7 @@ Then query using the pool:
 
 ```elixir
 pool = SqlKit.DuckDB.Pool.pool(MyApp.AnalyticsPool)
-SqlKit.query_all!(pool, "SELECT * FROM events WHERE date > $1", [~D[2024-01-01]])
+SqlKit.query_all(pool, "SELECT * FROM events WHERE date > $1", [~D[2024-01-01]])
 # => [%{id: 1, date: ~D[2024-01-15], ...}, ...]
 ```
 
@@ -212,7 +219,7 @@ defmodule MyApp.Analytics.SQL do
 end
 
 # Usage
-MyApp.Analytics.SQL.query_all!("daily_summary.sql", [~D[2024-01-01]])
+MyApp.Analytics.SQL.query_all("daily_summary.sql", [~D[2024-01-01]])
 ```
 
 ### Loading Extensions
@@ -221,9 +228,9 @@ DuckDB extensions (Parquet, JSON, HTTPFS, etc.) are loaded via SQL:
 
 ```elixir
 pool = SqlKit.DuckDB.Pool.pool(MyApp.AnalyticsPool)
-SqlKit.query!(pool, "INSTALL 'parquet';", [])
-SqlKit.query!(pool, "LOAD 'parquet';", [])
-SqlKit.query_all!(pool, "SELECT * FROM 'data.parquet'", [])
+SqlKit.query_one!(pool, "INSTALL 'parquet';", [])
+SqlKit.query_one!(pool, "LOAD 'parquet';", [])
+SqlKit.query_all(pool, "SELECT * FROM 'data.parquet'", [])
 ```
 
 ### Streaming Large Results
@@ -317,7 +324,7 @@ defmodule MyApp.Users do
   alias MyApp.Users.User
 
   def get_active_users(company_id, min_age) do
-    SqlKit.query_all!(MyApp.Repo, """
+    SqlKit.query_all(MyApp.Repo, """
       SELECT id, name, email, age
       FROM users
       WHERE company_id = $1
@@ -333,7 +340,7 @@ defmodule MyApp.Users do
   alias MyApp.Users.User
 
   def get_active_users(company_id, min_age) do
-    MyApp.Users.SQL.query_all!("active_users.sql", [company_id, min_age], as: User)
+    MyApp.Users.SQL.query_all("active_users.sql", [company_id, min_age], as: User)
   end
 end
 
@@ -360,19 +367,20 @@ Note: You must specify either `:repo` or `:backend`, but not both.
 
 These functions are defined directly on the `SqlKit` module and work with any Ecto repo:
 
-#### `SqlKit.query_all!(repo, sql, params \\ [], opts \\ [])`
+#### `SqlKit.query_all(repo, sql, params \\ [], opts \\ [])`
 
-Executes SQL and returns all rows as a list of maps.
+Executes SQL and returns all rows as a list of maps. Raises on query execution errors.
+Matches [`Ecto.Repo.all/2`](https://hexdocs.pm/ecto/Ecto.Repo.html#c:all/2) semantics.
 
 ```elixir
-SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users")
+SqlKit.query_all(MyApp.Repo, "SELECT * FROM users")
 # => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
 
-SqlKit.query_all!(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21], as: User)
+SqlKit.query_all(MyApp.Repo, "SELECT * FROM users WHERE age > $1", [21], as: User)
 # => [%User{id: 1, name: "Alice"}, ...]
 
 # ClickHouse uses named parameters as a map
-SqlKit.query_all!(ClickHouseRepo, "SELECT * FROM users WHERE age > {age:UInt32}", %{age: 21})
+SqlKit.query_all(ClickHouseRepo, "SELECT * FROM users WHERE age > {age:UInt32}", %{age: 21})
 # => [%{id: 1, name: "Alice"}, ...]
 ```
 
@@ -382,6 +390,8 @@ Executes SQL and returns exactly one row as a map.
 
 - Raises `SqlKit.NoResultsError` if no rows returned
 - Raises `SqlKit.MultipleResultsError` if more than one row returned
+
+Matches [`Ecto.Repo.one!/2`](https://hexdocs.pm/ecto/Ecto.Repo.html#c:one!/2) semantics.
 
 ```elixir
 SqlKit.query_one!(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
@@ -399,33 +409,25 @@ SqlKit.query_one!(ClickHouseRepo, "SELECT * FROM users WHERE id = {id:UInt32}", 
 
 Alias for `SqlKit.query_one!/4`. See `SqlKit.query_one!/4` documentation.
 
-#### `SqlKit.query_all(repo, sql, params \\ [], opts \\ [])`
-
-Returns `{:ok, results}` on success, `{:error, exception}` on failure.
-
-```elixir
-SqlKit.query_all(MyApp.Repo, "SELECT * FROM users")
-# => {:ok, [%{id: 1, name: "Alice"}, ...]}
-
-# ClickHouse uses named parameters as a map
-SqlKit.query_all(ClickHouseRepo, "SELECT * FROM users WHERE age > {age:UInt32}", %{age: 21})
-# => {:ok, [%{id: 1, name: "Alice"}, ...]}
-```
-
 #### `SqlKit.query_one(repo, sql, params \\ [], opts \\ [])`
 
-Returns `{:ok, result}` on one result, `{:ok, nil}` on no results, or `{:error, exception}` on multiple results or errors.
+Executes SQL and returns one row or nil. Raises on query execution errors or multiple results.
+Matches [`Ecto.Repo.one/2`](https://hexdocs.pm/ecto/Ecto.Repo.html#c:one/2) semantics.
+
+- Returns `result` on exactly one result
+- Returns `nil` on no results
+- Raises `SqlKit.MultipleResultsError` if more than one row returned
 
 ```elixir
 SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [1])
-# => {:ok, %{id: 1, name: "Alice"}}
+# => %{id: 1, name: "Alice"}
 
 SqlKit.query_one(MyApp.Repo, "SELECT * FROM users WHERE id = $1", [999])
-# => {:ok, nil}
+# => nil
 
 # ClickHouse uses named parameters as a map
 SqlKit.query_one(ClickHouseRepo, "SELECT * FROM users WHERE id = {id:UInt32}", %{id: 1})
-# => {:ok, %{id: 1, name: "Alice"}}
+# => %{id: 1, name: "Alice"}
 ```
 
 #### `SqlKit.query(repo, sql, params \\ [], opts \\ [])`
@@ -435,6 +437,23 @@ Alias for `SqlKit.query_one/4`. See `SqlKit.query_one/4` documentation.
 ### File-Based Functions
 
 These functions are generated by `use SqlKit` and available on your SQL modules:
+
+#### `query_all(filename, params \\ [], opts \\ [])`
+
+Executes a query and returns all rows as a list of maps. Raises on query execution errors.
+Matches [`Ecto.Repo.all/2`](https://hexdocs.pm/ecto/Ecto.Repo.html#c:all/2) semantics.
+
+```elixir
+SQL.query_all("users.sql", [company_id])
+# => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
+
+SQL.query_all("users.sql", [company_id], as: User)
+# => [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
+
+# ClickHouse uses named parameters as a map
+ClickHouseSQL.query_all("users.sql", %{company_id: 123})
+# => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
+```
 
 #### `query_one!(filename, params \\ [], opts \\ [])`
 
@@ -459,21 +478,29 @@ ClickHouseSQL.query_one!("user.sql", %{user_id: 1})
 
 Alias for `query_one!/3`. See `query_one!/3` documentation.
 
-#### `query_all!(filename, params \\ [], opts \\ [])`
+#### `query_one(filename, params \\ [], opts \\ [])`
 
-Executes a query and returns all rows as a list of maps.
+Executes a query and returns one row or nil. Raises on query execution errors or multiple results.
+Matches [`Ecto.Repo.one/2`](https://hexdocs.pm/ecto/Ecto.Repo.html#c:one/2) semantics.
 
 ```elixir
-SQL.query_all!("users.sql", [company_id])
-# => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
+SQL.query_one("user.sql", [user_id])
+# => %{id: 1, name: "Alice"}
 
-SQL.query_all!("users.sql", [company_id], as: User)
-# => [%User{id: 1, name: "Alice"}, %User{id: 2, name: "Bob"}]
+SQL.query_one("missing_user.sql", [999])
+# => nil  # No results returns nil
+
+# Raises SqlKit.MultipleResultsError on multiple results
+SQL.query_one("all_users.sql", [])
 
 # ClickHouse uses named parameters as a map
-ClickHouseSQL.query_all!("users.sql", %{company_id: 123})
-# => [%{id: 1, name: "Alice"}, %{id: 2, name: "Bob"}]
+ClickHouseSQL.query_one("user.sql", %{user_id: 1})
+# => %{id: 1, name: "Alice"}
 ```
+
+#### `query(filename, params \\ [], opts \\ [])`
+
+Alias for `query_one/3`. See `query_one/3` documentation.
 
 #### `load!(filename)`
 
@@ -482,38 +509,6 @@ Returns the SQL string for the given file.
 ```elixir
 SQL.load!("users.sql")
 # => "SELECT * FROM users"
-```
-
-#### `query_one(filename, params \\ [], opts \\ [])`
-
-```elixir
-SQL.query_one("user.sql", [user_id])
-# => {:ok, %{id: 1, name: "Alice"}}
-
-SQL.query_one("missing_user.sql", [999])
-# => {:ok, nil}  # No results returns nil, not an error
-
-SQL.query_one("all_users.sql", [])
-# => {:error, %SqlKit.MultipleResultsError{count: 10}}
-
-# ClickHouse uses named parameters as a map
-ClickHouseSQL.query_one("user.sql", %{user_id: 1})
-# => {:ok, %{id: 1, name: "Alice"}}
-```
-
-#### `query(filename, params \\ [], opts \\ [])`
-
-Alias for `query_one/3`. See `query_one/3` documentation.
-
-#### `query_all(filename, params \\ [], opts \\ [])`
-
-```elixir
-SQL.query_all("users.sql", [company_id])
-# => {:ok, [%{id: 1, name: "Alice"}, ...]}
-
-# ClickHouse uses named parameters as a map
-ClickHouseSQL.query_all("users.sql", %{company_id: 123})
-# => {:ok, [%{id: 1, name: "Alice"}, ...]}
 ```
 
 #### `load(filename)`
