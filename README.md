@@ -101,6 +101,22 @@ def deps do
 end
 ```
 
+## Configuration
+
+```elixir
+# config/config.exs
+config :my_app, SqlKit,
+  root_sql_dir: "priv/repo/sql"  # default
+
+# config/dev.exs and config/test.exs
+config :my_app, SqlKit,
+  load_sql: :dynamic  # read from disk at runtime
+
+# config/prod.exs (or rely on default)
+config :my_app, SqlKit,
+  load_sql: :compiled  # use compile-time embedded SQL
+```
+
 ## Quick Start
 
 ### Direct SQL Execution
@@ -313,22 +329,6 @@ SqlKit.DuckDB.Pool.query!(pool, sql, params, timeout: 10_000, cache: false)
 - Pool automatically caches prepared statements for repeated queries
 - Hugeint values are automatically converted to Elixir integers
 - Date/Time values are returned as tuples (e.g., `{2024, 1, 15}` for dates)
-
-## Configuration
-
-```elixir
-# config/config.exs
-config :my_app, SqlKit,
-  root_sql_dir: "priv/repo/sql"  # default
-
-# config/dev.exs and config/test.exs
-config :my_app, SqlKit,
-  load_sql: :dynamic  # read from disk at runtime
-
-# config/prod.exs (or rely on default)
-config :my_app, SqlKit,
-  load_sql: :compiled  # use compile-time embedded SQL
-```
 
 ## Parameter Syntax by Database
 
