@@ -24,6 +24,8 @@ sql_kit-*.tar
 
 # SQLite / DuckDB
 *.db
+*.db-shm
+*.db-wal
 *.duckdb
 
 # General
