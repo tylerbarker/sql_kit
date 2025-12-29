@@ -9,6 +9,46 @@ SqlKit provides two ways to execute SQL with automatic result transformation:
 1. **Direct SQL execution** - Execute SQL strings directly with any Ecto repo
 2. **File-based SQL** - Keep SQL in dedicated files with compile-time embedding
 
+```elixir
+# Direct SQL execution
+defmodule MyApp.Accounts do
+  alias MyApp.Accounts.User
+
+  def get_active_users(company_id, min_age) do
+    SqlKit.query_all(MyApp.Repo, """
+      SELECT id, name, email, age
+      FROM users
+      WHERE company_id = $1
+        AND age >= $2
+        AND active = true
+      ORDER BY name
+    """, [company_id, min_age], as: User)
+  end
+end
+
+# File-based SQL
+defmodule MyApp.Accounts.SQL do
+  use SqlKit,
+    otp_app: :my_app,
+    repo: MyApp.Repo,
+    dirname: "accounts",
+    files: ["active_users.sql", "another_query.sql"]
+end
+
+defmodule MyApp.Accounts do
+  alias MyApp.Accounts.SQL
+  alias MyApp.Accounts.User
+
+  def get_active_users(company_id, min_age) do
+    SQL.query_all("active_users.sql", [company_id, min_age], as: User)
+  end
+end
+
+# Usage
+MyApp.Accounts.get_active_users(123, 21)
+# => [%User{id: 1, name: "Alice", email: "alice@example.com", age: 30}, ...]
+```
+
 ## Why?
 
 Sometimes raw SQL is the right tool for the job. Complex analytical queries, reports with intricate joins, or database-specific features often demand SQL that's awkward to express through an ORM.
@@ -320,8 +360,8 @@ For databases using positional parameters, wrap SqlKit calls in functions to get
 
 ```elixir
 # SQL string
-defmodule MyApp.Users do
-  alias MyApp.Users.User
+defmodule MyApp.Accounts do
+  alias MyApp.Accounts.User
 
   def get_active_users(company_id, min_age) do
     SqlKit.query_all(MyApp.Repo, """
@@ -336,16 +376,17 @@ defmodule MyApp.Users do
 end
 
 # SQL file
-defmodule MyApp.Users do
-  alias MyApp.Users.User
+defmodule MyApp.Accounts do
+  alias MyApp.Accounts.SQL # `use SqlKit` module
+  alias MyApp.Accounts.User
 
   def get_active_users(company_id, min_age) do
-    MyApp.Users.SQL.query_all("active_users.sql", [company_id, min_age], as: User)
+    SQL.query_all("active_users.sql", [company_id, min_age], as: User)
   end
 end
 
 # Usage
-MyApp.Users.get_active_users(123, 21)
+MyApp.Accounts.get_active_users(123, 21)
 # => [%User{id: 1, name: "Alice", email: "alice@example.com", age: 30}, ...]
 ```
 
